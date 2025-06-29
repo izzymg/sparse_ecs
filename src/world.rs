@@ -8,7 +8,7 @@ use crate::{
     tags,
 };
 
-// Storage for components to make serialization etc easier.
+/// Storage for components and tags, as well as basic entity management.
 pub struct World {
     pub tags: tags::EntityTags,
     map: HashMap<TypeId, Box<dyn Any>>,
@@ -21,6 +21,7 @@ pub struct World {
 
 #[allow(dead_code)]
 impl World {
+    /// Creates a new world.
     pub fn new(size: usize) -> Self {
         World {
             map: HashMap::new(),
@@ -31,6 +32,9 @@ impl World {
             size,
         }
     }
+
+    /// Spawns a new entity.
+    /// If there are dead entities, it reuses one of their IDs.
     pub fn spawn(&mut self) -> component::Entity {
         if let Some(dead_id) = self.dead_entities.iter().next().cloned() {
             self.dead_entities.remove(&dead_id);
@@ -45,6 +49,9 @@ impl World {
         }
     }
 
+    /// Removes an entity from all component storage and tags.
+    /// This will panic if the entity does not exist.
+    /// The ID may be reused in the future.
     pub fn despawn(&mut self, entity: component::Entity) {
         if self.entities.remove(&entity.0) {
             self.dead_entities.insert(entity.0);
@@ -54,6 +61,8 @@ impl World {
         }
     }
 
+    /// Adds a component type to the world.
+    /// This will create a new `SparseSet` for the component type.
     pub fn add<T: Component>(&mut self) {
         let key = TypeId::of::<T>();
         let set = SparseSet::<T>::new(self.size);
@@ -64,6 +73,7 @@ impl World {
         assert!(self.map.contains_key(&key), "Component not added to World2");
     }
 
+    /// Retrieves a `SparseSet` for the component type from the world, if present.
     pub fn get<T: Component>(&self) -> Option<&SparseSet<T>> {
         let key = TypeId::of::<T>();
         let comp = self.map.get(&key);
@@ -71,6 +81,7 @@ impl World {
         comp?.downcast_ref::<SparseSet<T>>()
     }
 
+    /// Retrieves a `SparseSet` for the component type from the world, if present.
     pub fn get_mut<T: Component>(&mut self) -> Option<&mut SparseSet<T>> {
         let comp = self.map.get_mut(&TypeId::of::<T>());
 
@@ -79,6 +90,7 @@ impl World {
         comp.downcast_mut::<SparseSet<T>>()
     }
 
+    /// Retrieves two `SparseSet` for the component type from the world, if present.
     pub fn get_two_mut<T: Component, K: Component>(
         &mut self,
     ) -> (Option<&mut SparseSet<T>>, Option<&mut SparseSet<K>>) {
@@ -94,6 +106,7 @@ impl World {
         )
     }
 
+    /// Retrieves three `SparseSet` for the component type from the world, if present.
     pub fn get_three_mut<T: Component, K: Component, L: Component>(
         &mut self,
     ) -> (
