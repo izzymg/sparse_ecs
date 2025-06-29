@@ -1,0 +1,12 @@
+[package]
+name = "sparse_ecs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+parking_lot = { version = "0.12.4", default-features = false }
+sparse-ecs-macros = { path = "./sparse_ecs_macros" }
+
+[features]
+default = ["macros"]
+macros = []
