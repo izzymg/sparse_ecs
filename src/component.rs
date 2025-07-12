@@ -58,6 +58,19 @@ where
         }
     }
 
+    /// Sets the data for the given entity, replacing any existing data.
+    /// If the entity does not exist, it will be added.
+    pub fn set(&mut self, data: T, entity: Entity) {
+        if let Some(idx) = self.sparse[entity.0] {
+            // Update existing entity
+            self.dense[idx] = data;
+        } else {
+            // Add new entity
+            self.add_entity(data, entity);
+            self.dirty = true;
+        }
+    }
+
     /// Adds a new entity with the given component data.
     /// Panics if the entity already exists in this component.
     pub fn add_entity(&mut self, data: T, entity: Entity) {
