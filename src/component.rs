@@ -111,7 +111,7 @@ where
     /// Returns the number of entities with this component.
     pub fn len(&self) -> usize {
         self.dense.len()
-    } 
+    }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, &T)> {
         self.entities
@@ -127,6 +127,10 @@ where
             .copied()
             .zip(self.dense.iter_mut())
             .map(|(id, data)| (Entity(id), data))
+    }
+
+    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.entities.iter().map(|&id| Entity(id))
     }
 }
 
