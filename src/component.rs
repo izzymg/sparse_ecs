@@ -38,10 +38,13 @@ impl FromStr for Entity {
 /// - `entities`: Stores the entity IDs corresponding to each dense index.
 #[derive(Clone)]
 pub struct SparseSet<T: Send + Sync + Copy + Clone> {
+    // Tracks every entity that has been added to this sparseset
+    pub added: Vec<Entity>,
+    // Tracks every entity that has been removed from this sparseset
+    pub removed: Vec<Entity>,
     sparse: Vec<Option<usize>>,
     dense: Vec<T>,
     entities: Vec<usize>,
-    pub dirty: bool,
 }
 
 impl<T> SparseSet<T>
@@ -51,10 +54,11 @@ where
     /// Creates a new component storage with the given capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
+            added: Vec::new(),
+            removed: Vec::new(),
             sparse: vec![None; capacity],
             dense: Vec::with_capacity(capacity),
             entities: Vec::with_capacity(capacity),
-            dirty: true,
         }
     }
 
@@ -67,7 +71,6 @@ where
         } else {
             // Add new entity
             self.add_entity(data, entity);
-            self.dirty = true;
         }
     }
 
@@ -78,7 +81,7 @@ where
         self.sparse[entity.0] = Some(self.dense.len());
         self.dense.push(data);
         self.entities.push(entity.0);
-        self.dirty = true;
+        self.added.push(entity);
     }
 
     /// Removes an entity and returns its component data, if present.
@@ -94,7 +97,7 @@ where
                     let moved_entity = self.entities[idx];
                     self.sparse[moved_entity] = Some(idx);
                 }
-                self.dirty = true;
+                self.removed.push(entity);
                 Some(removed)
             }
             None => None,
@@ -339,5 +342,61 @@ mod tests {
         let combined_key = entity1.combine_key(entity2);
         let entity3 = Entity(combined_key);
         assert_ne!(entity3.combine_key(entity1), combined_key);
+    }
+
+    #[test]
+    fn test_added_removed_tracking() {
+        let mut component = SparseSet::<u32>::new(5);
+        
+        // Initially, both vectors should be empty
+        assert!(component.added.is_empty());
+        assert!(component.removed.is_empty());
+        
+        // Add some entities
+        component.add_entity(10, Entity(0));
+        component.add_entity(20, Entity(1));
+        component.add_entity(30, Entity(2));
+        
+        // Check that added entities are tracked
+        assert_eq!(component.added.len(), 3);
+        assert!(component.added.contains(&Entity(0)));
+        assert!(component.added.contains(&Entity(1)));
+        assert!(component.added.contains(&Entity(2)));
+        assert!(component.removed.is_empty());
+        
+        // Remove an entity
+        let removed_data = component.remove_entity(Entity(1));
+        assert_eq!(removed_data, Some(20));
+        
+        // Check that removed entity is tracked
+        assert_eq!(component.removed.len(), 1);
+        assert!(component.removed.contains(&Entity(1)));
+        assert_eq!(component.added.len(), 3); // Added vector should remain unchanged
+        
+        // Remove another entity
+        component.remove_entity(Entity(2));
+        
+        // Check that both removed entities are tracked
+        assert_eq!(component.removed.len(), 2);
+        assert!(component.removed.contains(&Entity(1)));
+        assert!(component.removed.contains(&Entity(2)));
+        
+        // Try to remove non-existent entity
+        let not_removed = component.remove_entity(Entity(3));
+        assert_eq!(not_removed, None);
+        
+        // Removed vector should not change for non-existent entity
+        assert_eq!(component.removed.len(), 2);
+        
+        // Add an entity that was previously removed
+        component.add_entity(40, Entity(1));
+        
+        // Check that it's added to the added vector again
+        assert_eq!(component.added.len(), 4);
+        assert!(component.added.contains(&Entity(1))); // Should appear twice in added
+        
+        // Count occurrences of Entity(1) in added vector
+        let entity1_count = component.added.iter().filter(|&&e| e == Entity(1)).count();
+        assert_eq!(entity1_count, 2);
     }
 }
