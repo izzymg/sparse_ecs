@@ -77,7 +77,7 @@ where
     /// Adds a new entity with the given component data.
     /// Panics if the entity already exists in this component.
     pub fn add_entity(&mut self, data: T, entity: Entity) {
-        assert_eq!(self.sparse[entity.0], None);
+        debug_assert_eq!(self.sparse[entity.0], None);
         self.sparse[entity.0] = Some(self.dense.len());
         self.dense.push(data);
         self.entities.push(entity.0);

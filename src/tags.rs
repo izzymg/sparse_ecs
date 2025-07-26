@@ -22,7 +22,7 @@ impl TagList {
     }
 
     pub fn expect_one(&self) -> Entity {
-        assert!(
+        debug_assert!(
             self.set.len() == 1,
             "Expected exactly one entity with this tag"
         );

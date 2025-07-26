@@ -63,14 +63,16 @@ impl World {
 
     /// Adds a component type to the world.
     /// This will create a new `SparseSet` for the component type.
-    pub fn add<T: Component>(&mut self) {
+    /// Returns `false` if the component type already exists.
+    pub fn add<T: Component>(&mut self) -> bool {
         let key = TypeId::of::<T>();
         let set = SparseSet::<T>::new(self.size);
         if self.map.contains_key(&key) {
-            todo!("not sure how to handle this")
+            return false;
         }
         self.map.insert(key, Box::new(set));
-        assert!(self.map.contains_key(&key), "Component not added to World2");
+        debug_assert!(self.map.contains_key(&key), "Component not added to World2");
+        true
     }
 
     /// Retrieves a `SparseSet` for the component type from the world, if present.
