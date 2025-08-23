@@ -126,6 +126,42 @@ where
         self.dense.len()
     }
 
+    /// Uses unsafe to iterate the ECS a bit faster.
+    pub fn iter_unchecked(&self) -> impl Iterator<Item = (Entity, &T)> {
+        // Safety: `entities` and `dense` are always the same length
+        assert_eq!(self.entities.len(), self.dense.len());
+        unsafe {
+            let entities_ptr = self.entities.as_ptr();
+            let dense_ptr = self.dense.as_ptr();
+            let len = self.entities.len();
+
+            (0..len).map(move |i| {
+                (
+                    Entity(*entities_ptr.add(i)),
+                    &*dense_ptr.add(i),
+                )
+            })
+        }
+    }
+
+    /// Uses unsafe to iterate the ECS a bit faster (mutable ref to the component data).
+    pub fn iter_mut_unchecked(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
+        // Safety: `entities` and `dense` are always the same length
+        assert_eq!(self.entities.len(), self.dense.len());
+        unsafe {
+            let entities_ptr = self.entities.as_ptr();
+            let dense_ptr = self.dense.as_mut_ptr();
+            let len = self.entities.len();
+
+            (0..len).map(move |i| {
+                (
+                    Entity(*entities_ptr.add(i)),
+                    &mut *dense_ptr.add(i),
+                )
+            })
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (Entity, &T)> {
         self.entities
             .iter()
@@ -177,7 +213,7 @@ macro_rules! ecs_has {
 #[cfg(test)]
 mod tests {
 
-    use std::vec;
+    use std::{time::Instant, vec};
 
     use super::*;
 
@@ -232,6 +268,43 @@ mod tests {
             assert_eq!(*data, 5);
         }
     }
+
+    #[test]
+    fn test_iter_big_safe() {
+        let mut component = SparseSet::<u32>::new(1000);
+        for i in 0..1000 {
+            component.add_entity(i, Entity(i.try_into().unwrap()));
+        }
+        let i = Instant::now();
+        for (_entity, data) in component.iter_mut() {
+            *data = 5;
+        }
+        println!("mutation: {:?}", i.elapsed());
+        let i = Instant::now();
+        for (_entity, data) in component.iter() {
+            assert_eq!(*data, 5);
+        }
+        println!("iteration: {:?}", i.elapsed());
+    }
+
+    #[test]
+    fn test_iter_big_unsafe() {
+        let mut component = SparseSet::<u32>::new(1000);
+        for i in 0..1000 {
+            component.add_entity(i, Entity(i.try_into().unwrap()));
+        }
+        let i = Instant::now();
+        for (_entity, data) in component.iter_mut_unchecked() {
+            *data = 5;
+        }
+        println!("mutation: {:?}", i.elapsed());
+        let i = Instant::now();
+        for (_entity, data) in component.iter_unchecked() {
+            assert_eq!(*data, 5);
+        }
+        println!("iteration: {:?}", i.elapsed());
+    }
+
 
     #[test]
     fn test_add_remove() {
