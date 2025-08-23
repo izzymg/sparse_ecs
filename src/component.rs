@@ -1,13 +1,10 @@
 // Sparse set component storage for the ecs
 
 use std::{
-    slice::{Iter, IterMut},
     str::FromStr,
 };
 
 use std::fmt::Debug;
-
-use crate::world::Component;
 
 /// Represents a unique entity in the ECS.
 /// Wraps a usize ID.
@@ -77,7 +74,7 @@ where
     /// Adds a new entity with the given component data.
     /// Panics if the entity already exists in this component.
     pub fn add_entity(&mut self, data: T, entity: Entity) {
-        debug_assert_eq!(self.sparse[entity.0], None);
+        assert_eq!(self.sparse[entity.0], None);
         self.sparse[entity.0] = Some(self.dense.len());
         self.dense.push(data);
         self.entities.push(entity.0);
@@ -150,77 +147,6 @@ where
     }
 }
 
-/// Iterator over (Entity, &T) pairs for a component.
-pub struct ComponentIter<'a, T, F>
-where
-    F: Fn(usize) -> Entity,
-{
-    entities: Iter<'a, usize>,
-    components: Iter<'a, T>,
-    mapper: F,
-}
-
-impl<'a, T: Send + Sync + Copy + Clone, F: Fn(usize) -> Entity> Iterator
-    for ComponentIter<'a, T, F>
-{
-    type Item = (Entity, &'a T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.entities
-            .next()
-            .map(|id| (self.mapper)(*id))
-            .zip(self.components.next())
-    }
-}
-
-/// Iterator over (Entity, &mut T) pairs for a component.
-pub struct ComponentIterMut<'a, T, F>
-where
-    F: Fn(usize) -> Entity,
-{
-    entities: Iter<'a, usize>,
-    components: IterMut<'a, T>,
-    mapper: F,
-}
-
-impl<'a, T: Send, F: Fn(usize) -> Entity> Iterator for ComponentIterMut<'a, T, F> {
-    type Item = (Entity, &'a mut T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.entities
-            .next()
-            .map(|id| (self.mapper)(*id))
-            .zip(self.components.next())
-    }
-}
-
-/* Iterator over ref into the dense array, and entity */
-impl<'a, T: Send + Sync + Copy + Clone> IntoIterator for &'a SparseSet<T> {
-    type Item = (Entity, &'a T);
-    type IntoIter = ComponentIter<'a, T, fn(usize) -> Entity>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ComponentIter {
-            entities: self.entities.iter(),
-            components: self.dense.iter(),
-            mapper: |id| Entity(id),
-        }
-    }
-}
-
-/* Iterator over mutable ref into the dense array, and entity */
-impl<'a, T: Send + Sync + Copy + Clone> IntoIterator for &'a mut SparseSet<T> {
-    type Item = (Entity, &'a mut T);
-    type IntoIter = ComponentIterMut<'a, T, fn(usize) -> Entity>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ComponentIterMut {
-            entities: self.entities.iter(),
-            components: self.dense.iter_mut(),
-            mapper: |id| Entity(id),
-        }
-    }
-}
 
 /// Attempts to get a reference to a component. If not found, executes the fallback block.
 /// Usage: and!(components, entity, comp, { continue; });
@@ -279,7 +205,7 @@ mod tests {
 
         let mut found = Vec::<Entity>::new();
 
-        for (entity, _position) in &positions {
+        for (entity, _position) in positions.iter() {
             ecs_and_mut!(velocities, entity, _velocity, {
                 continue;
             });
@@ -299,10 +225,10 @@ mod tests {
         for i in 0..5 {
             component.add_entity(i, Entity(i.try_into().unwrap()));
         }
-        for (_entity, data) in &mut component {
+        for (_entity, data) in component.iter_mut() {
             *data = 5;
         }
-        for (_entity, data) in &component {
+        for (_entity, data) in component.iter() {
             assert_eq!(*data, 5);
         }
     }
@@ -394,6 +320,7 @@ mod tests {
         // Check that it's added to the added vector again
         assert_eq!(component.added.len(), 4);
         assert!(component.added.contains(&Entity(1))); // Should appear twice in added
+        
         
         // Count occurrences of Entity(1) in added vector
         let entity1_count = component.added.iter().filter(|&&e| e == Entity(1)).count();
