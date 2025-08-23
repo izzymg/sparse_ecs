@@ -129,7 +129,7 @@ where
     /// Uses unsafe to iterate the ECS a bit faster.
     pub fn iter_unchecked(&self) -> impl Iterator<Item = (Entity, &T)> {
         // Safety: `entities` and `dense` are always the same length
-        assert_eq!(self.entities.len(), self.dense.len());
+        debug_assert_eq!(self.entities.len(), self.dense.len());
         unsafe {
             let entities_ptr = self.entities.as_ptr();
             let dense_ptr = self.dense.as_ptr();
@@ -147,7 +147,7 @@ where
     /// Uses unsafe to iterate the ECS a bit faster (mutable ref to the component data).
     pub fn iter_mut_unchecked(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
         // Safety: `entities` and `dense` are always the same length
-        assert_eq!(self.entities.len(), self.dense.len());
+        debug_assert_eq!(self.entities.len(), self.dense.len());
         unsafe {
             let entities_ptr = self.entities.as_ptr();
             let dense_ptr = self.dense.as_mut_ptr();
