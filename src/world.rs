@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    component::{self, SparseSet},
+    component::{self, Entity, SparseSet},
     tags,
 };
 
@@ -73,6 +73,21 @@ impl World {
         self.map.insert(key, Box::new(set));
         debug_assert!(self.map.contains_key(&key), "Component not added to World2");
         true
+    }
+
+
+    /// Returns an iterator over the component SparseSet, or empty if not present.
+    pub fn iter<T: Component>(&self) -> impl Iterator<Item = (Entity, &T)> {
+        self.get::<T>()
+            .into_iter()  
+            .flat_map(|set| set.iter())
+    }
+
+    /// Returns an iterator over the component SparseSet, or empty if not present.
+    pub fn iter_mut<T: Component>(&self) -> impl Iterator<Item = (Entity, &mut T)> {
+        self.get::<T>()
+            .into_iter()  
+            .flat_map(|set| set.iter_mut())
     }
 
     /// Retrieves a `SparseSet` for the component type from the world, if present.
@@ -174,23 +189,29 @@ mod test {
     #[test]
     fn test_entity_id_reuse() {
         let mut world = super::World::new(5);
-        
+
         // Spawn first entity
         let entity1 = world.spawn();
         let first_id = entity1.0;
-        
+
         // Spawn second entity
         let entity2 = world.spawn();
         let second_id = entity2.0;
-        
+
         // Despawn first entity
         world.despawn(entity1);
-        
+
         // Spawn third entity - should reuse first entity's ID
         let entity3 = world.spawn();
         let third_id = entity3.0;
-        
-        assert_eq!(first_id, third_id, "Entity ID should be reused after despawn");
-        assert_ne!(second_id, third_id, "Third entity should not have same ID as active entity");
+
+        assert_eq!(
+            first_id, third_id,
+            "Entity ID should be reused after despawn"
+        );
+        assert_ne!(
+            second_id, third_id,
+            "Third entity should not have same ID as active entity"
+        );
     }
 }
