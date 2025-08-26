@@ -84,8 +84,8 @@ impl World {
     }
 
     /// Returns an iterator over the component SparseSet, or empty if not present.
-    pub fn iter_mut<T: Component>(&self) -> impl Iterator<Item = (Entity, &mut T)> {
-        self.get::<T>()
+    pub fn iter_mut<T: Component>(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
+        self.get_mut::<T>()
             .into_iter()  
             .flat_map(|set| set.iter_mut())
     }
