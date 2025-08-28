@@ -107,45 +107,117 @@ impl World {
         comp.downcast_mut::<SparseSet<T>>()
     }
 
-    /// Retrieves two `SparseSet` for the component type from the world, if present.
-    pub fn get_two_mut<T: Component, K: Component>(
-        &mut self,
-    ) -> (Option<&mut SparseSet<T>>, Option<&mut SparseSet<K>>) {
-        let [Some(a), Some(b)] = self
-            .map
-            .get_disjoint_mut([&TypeId::of::<T>(), &TypeId::of::<K>()])
-        else {
-            return (None, None);
-        };
-        (
-            a.downcast_mut::<SparseSet<T>>(),
-            b.downcast_mut::<SparseSet<K>>(),
-        )
-    }
 
-    /// Retrieves three `SparseSet` for the component type from the world, if present.
-    pub fn get_three_mut<T: Component, K: Component, L: Component>(
-        &mut self,
-    ) -> (
-        Option<&mut SparseSet<T>>,
-        Option<&mut SparseSet<K>>,
-        Option<&mut SparseSet<L>>,
-    ) {
-        let [Some(a), Some(b), Some(c)] =
-            self.map
-                .get_disjoint_mut([&TypeId::of::<T>(), &TypeId::of::<K>(), &TypeId::of::<L>()])
-        else {
-            return (None, None, None);
-        };
-        (
-            a.downcast_mut::<SparseSet<T>>(),
-            b.downcast_mut::<SparseSet<K>>(),
-            c.downcast_mut::<SparseSet<L>>(),
-        )
-    }
 }
 
 pub trait Component: Sync + Send + 'static + Sized + Copy + Clone {}
+
+macro_rules! impl_get_mut {
+    ($name:ident, $( $ty:ident ),+) => {
+        pub fn $name<$($ty: Component),+>(
+            &mut self
+        ) -> ( $( Option<&mut SparseSet<$ty>> ),+ ) {
+            let keys = [ $( &TypeId::of::<$ty>() ),+ ];
+            let slots = self.map.get_disjoint_mut(keys);
+
+            // zip the slots with the types in order
+            let mut it = slots.into_iter();
+            (
+                $(
+                    it.next().unwrap()
+                        .and_then(|s| s.downcast_mut::<SparseSet<$ty>>()),
+                )+
+            )
+        }
+    };
+}
+
+impl World {
+    // Distinct generic identifiers for each arity
+    impl_get_mut!(get_two_mut, A, B);
+    impl_get_mut!(get_three_mut, A, B, C);
+    impl_get_mut!(get_four_mut, A, B, C, D);
+    impl_get_mut!(get_five_mut, A, B, C, D, E);
+    impl_get_mut!(get_six_mut, A, B, C, D, E, F);
+}
+
+pub trait QueryMut<'a> {
+    type Output;
+    fn query(world: &'a mut World) -> Self::Output;
+}
+
+impl<'a, A: Component> QueryMut<'a> for (A,) {
+    type Output = Option<&'a mut SparseSet<A>>;
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_mut::<A>()
+    }
+}
+
+impl<'a, A: Component, B: Component> QueryMut<'a> for (A, B) {
+    type Output = (Option<&'a mut SparseSet<A>>, Option<&'a mut SparseSet<B>>);
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_two_mut::<A, B>()
+    }
+}
+
+impl<'a, A: Component, B: Component, C: Component> QueryMut<'a> for (A, B, C) {
+    type Output = (
+        Option<&'a mut SparseSet<A>>,
+        Option<&'a mut SparseSet<B>>,
+        Option<&'a mut SparseSet<C>>,
+    );
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_three_mut::<A, B, C>()
+    }
+}
+
+impl<'a, A: Component, B: Component, C: Component, D: Component> QueryMut<'a>
+    for (A, B, C, D)
+{
+    type Output = (
+        Option<&'a mut SparseSet<A>>,
+        Option<&'a mut SparseSet<B>>,
+        Option<&'a mut SparseSet<C>>,
+        Option<&'a mut SparseSet<D>>,
+    );
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_four_mut::<A, B, C, D>()
+    }
+}
+
+impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> QueryMut<'a>
+    for (A, B, C, D, E)
+{
+    type Output = (
+        Option<&'a mut SparseSet<A>>,
+        Option<&'a mut SparseSet<B>>,
+        Option<&'a mut SparseSet<C>>,
+        Option<&'a mut SparseSet<D>>,
+        Option<&'a mut SparseSet<E>>,
+    );
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_five_mut::<A, B, C, D, E>()
+    }
+}
+
+impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F: Component>
+    QueryMut<'a> for (A, B, C, D, E, F)
+{
+    type Output = (
+        Option<&'a mut SparseSet<A>>,
+        Option<&'a mut SparseSet<B>>,
+        Option<&'a mut SparseSet<C>>,
+        Option<&'a mut SparseSet<D>>,
+        Option<&'a mut SparseSet<E>>,
+        Option<&'a mut SparseSet<F>>,
+    );
+    fn query(world: &'a mut World) -> Self::Output {
+        world.get_six_mut::<A, B, C, D, E, F>()
+    }
+}
+
+
+
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -160,6 +232,22 @@ mod test {
     #[derive(Copy, Clone)]
     struct Other;
     impl super::Component for Other {}
+
+    #[derive(Copy, Clone)]
+    struct Third;
+    impl super::Component for Third {}
+
+    #[derive(Copy, Clone)]
+    struct Fourth;
+    impl super::Component for Fourth {}
+
+    #[derive(Copy, Clone)]
+    struct Fifth;
+    impl super::Component for Fifth {}
+
+    #[derive(Copy, Clone)]
+    struct Sixth;
+    impl super::Component for Sixth {}
 
     #[test]
     fn test_world2_creation() {
@@ -184,6 +272,69 @@ mod test {
         let (my_component, other_component) = world.get_two_mut::<MyComponent, Other>();
         assert!(my_component.is_some());
         assert!(other_component.is_some());
+    }
+
+    #[test]
+    fn test_querymut_single() {
+        let mut world = super::World::new(5);
+        world.add::<MyComponent>();
+        let comp_opt = <(MyComponent,) as super::QueryMut>::query(&mut world);
+        assert!(comp_opt.is_some());
+    }
+
+    #[test]
+    fn test_querymut_double() {
+        let mut world = super::World::new(5);
+        world.add::<MyComponent>();
+        world.add::<Other>();
+        let (a,b) = <(MyComponent, Other) as super::QueryMut>::query(&mut world);
+        assert!(a.is_some() && b.is_some());
+    }
+
+    #[test]
+    fn test_querymut_triple() {
+        let mut world = super::World::new(5);
+        world.add::<MyComponent>();
+        world.add::<Other>();
+        world.add::<Third>();
+        let (a,b,c) = <(MyComponent, Other, Third) as super::QueryMut>::query(&mut world);
+        assert!(a.is_some() && b.is_some() && c.is_some());
+    }
+
+    #[test]
+    fn test_querymut_quad() {
+        let mut world = super::World::new(6);
+        world.add::<MyComponent>();
+        world.add::<Other>();
+        world.add::<Third>();
+        world.add::<Fourth>();
+        let (a,b,c,d) = <(MyComponent, Other, Third, Fourth) as super::QueryMut>::query(&mut world);
+        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some());
+    }
+
+    #[test]
+    fn test_querymut_five() {
+        let mut world = super::World::new(6);
+        world.add::<MyComponent>();
+        world.add::<Other>();
+        world.add::<Third>();
+        world.add::<Fourth>();
+        world.add::<Fifth>();
+        let (a,b,c,d,e) = <(MyComponent, Other, Third, Fourth, Fifth) as super::QueryMut>::query(&mut world);
+        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some());
+    }
+
+    #[test]
+    fn test_querymut_six() {
+        let mut world = super::World::new(6);
+        world.add::<MyComponent>();
+        world.add::<Other>();
+        world.add::<Third>();
+        world.add::<Fourth>();
+        world.add::<Fifth>();
+        world.add::<Sixth>();
+        let (a,b,c,d,e,f) = <(MyComponent, Other, Third, Fourth, Fifth, Sixth) as super::QueryMut>::query(&mut world);
+        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some() && f.is_some());
     }
 
     #[test]
@@ -214,4 +365,5 @@ mod test {
             "Third entity should not have same ID as active entity"
         );
     }
+
 }
