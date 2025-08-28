@@ -143,31 +143,33 @@ impl World {
 
 pub trait FetchMut<'a> {
     type Output;
-    fn fetch(world: &'a mut World) -> Self::Output;
+    fn fetch(world: &'a mut World) -> Option<Self::Output>;
 }
 
 impl<'a, A: Component> FetchMut<'a> for (A,) {
-    type Output = Option<&'a mut SparseSet<A>>;
-    fn fetch(world: &'a mut World) -> Self::Output {
+    type Output = &'a mut SparseSet<A>;
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
         world.get_mut::<A>()
     }
 }
 
 impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
-    type Output = (Option<&'a mut SparseSet<A>>, Option<&'a mut SparseSet<B>>);
-    fn fetch(world: &'a mut World) -> Self::Output {
-        world.get_two_mut::<A, B>()
+    type Output = (&'a mut SparseSet<A>, &'a mut SparseSet<B>);
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
+        let (a, b) = world.get_two_mut::<A, B>();
+        Some((a?, b?))
     }
 }
 
 impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
     type Output = (
-        Option<&'a mut SparseSet<A>>,
-        Option<&'a mut SparseSet<B>>,
-        Option<&'a mut SparseSet<C>>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
     );
-    fn fetch(world: &'a mut World) -> Self::Output {
-        world.get_three_mut::<A, B, C>()
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
+        let (a, b, c) = world.get_three_mut::<A, B, C>();
+        Some((a?, b?, c?))
     }
 }
 
@@ -175,13 +177,14 @@ impl<'a, A: Component, B: Component, C: Component, D: Component> FetchMut<'a>
     for (A, B, C, D)
 {
     type Output = (
-        Option<&'a mut SparseSet<A>>,
-        Option<&'a mut SparseSet<B>>,
-        Option<&'a mut SparseSet<C>>,
-        Option<&'a mut SparseSet<D>>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
     );
-    fn fetch(world: &'a mut World) -> Self::Output {
-        world.get_four_mut::<A, B, C, D>()
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
+        let (a, b, c, d) = world.get_four_mut::<A, B, C, D>();
+        Some((a?, b?, c?, d?))
     }
 }
 
@@ -189,14 +192,15 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> F
     for (A, B, C, D, E)
 {
     type Output = (
-        Option<&'a mut SparseSet<A>>,
-        Option<&'a mut SparseSet<B>>,
-        Option<&'a mut SparseSet<C>>,
-        Option<&'a mut SparseSet<D>>,
-        Option<&'a mut SparseSet<E>>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
+        &'a mut SparseSet<E>,
     );
-    fn fetch(world: &'a mut World) -> Self::Output {
-        world.get_five_mut::<A, B, C, D, E>()
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
+        let (a, b, c, d, e) = world.get_five_mut::<A, B, C, D, E>();
+        Some((a?, b?, c?, d?, e?))
     }
 }
 
@@ -204,15 +208,16 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F
     FetchMut<'a> for (A, B, C, D, E, F)
 {
     type Output = (
-        Option<&'a mut SparseSet<A>>,
-        Option<&'a mut SparseSet<B>>,
-        Option<&'a mut SparseSet<C>>,
-        Option<&'a mut SparseSet<D>>,
-        Option<&'a mut SparseSet<E>>,
-        Option<&'a mut SparseSet<F>>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
+        &'a mut SparseSet<E>,
+        &'a mut SparseSet<F>,
     );
-    fn fetch(world: &'a mut World) -> Self::Output {
-        world.get_six_mut::<A, B, C, D, E, F>()
+    fn fetch(world: &'a mut World) -> Option<Self::Output> {
+        let (a, b, c, d, e, f) = world.get_six_mut::<A, B, C, D, E, F>();
+        Some((a?, b?, c?, d?, e?, f?))
     }
 }
 
@@ -287,8 +292,8 @@ mod test {
         let mut world = super::World::new(5);
         world.add::<MyComponent>();
         world.add::<Other>();
-        let (a,b) = <(MyComponent, Other) as super::FetchMut>::fetch(&mut world);
-        assert!(a.is_some() && b.is_some());
+    let fetched = <(MyComponent, Other) as super::FetchMut>::fetch(&mut world);
+    assert!(fetched.is_some());
     }
 
     #[test]
@@ -297,8 +302,8 @@ mod test {
         world.add::<MyComponent>();
         world.add::<Other>();
         world.add::<Third>();
-        let (a,b,c) = <(MyComponent, Other, Third) as super::FetchMut>::fetch(&mut world);
-        assert!(a.is_some() && b.is_some() && c.is_some());
+    let fetched = <(MyComponent, Other, Third) as super::FetchMut>::fetch(&mut world);
+    assert!(fetched.is_some());
     }
 
     #[test]
@@ -308,8 +313,8 @@ mod test {
         world.add::<Other>();
         world.add::<Third>();
         world.add::<Fourth>();
-        let (a,b,c,d) = <(MyComponent, Other, Third, Fourth) as super::FetchMut>::fetch(&mut world);
-        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some());
+    let fetched = <(MyComponent, Other, Third, Fourth) as super::FetchMut>::fetch(&mut world);
+    assert!(fetched.is_some());
     }
 
     #[test]
@@ -320,8 +325,8 @@ mod test {
         world.add::<Third>();
         world.add::<Fourth>();
         world.add::<Fifth>();
-        let (a,b,c,d,e) = <(MyComponent, Other, Third, Fourth, Fifth) as super::FetchMut>::fetch(&mut world);
-        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some());
+    let fetched = <(MyComponent, Other, Third, Fourth, Fifth) as super::FetchMut>::fetch(&mut world);
+    assert!(fetched.is_some());
     }
 
     #[test]
@@ -333,8 +338,8 @@ mod test {
         world.add::<Fourth>();
         world.add::<Fifth>();
         world.add::<Sixth>();
-        let (a,b,c,d,e,f) = <(MyComponent, Other, Third, Fourth, Fifth, Sixth) as super::FetchMut>::fetch(&mut world);
-        assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some() && f.is_some());
+    let fetched = <(MyComponent, Other, Third, Fourth, Fifth, Sixth) as super::FetchMut>::fetch(&mut world);
+    assert!(fetched.is_some());
     }
 
     #[test]
