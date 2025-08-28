@@ -1,7 +1,4 @@
-//! Example demonstrating QueryMut usage for 1..=6 component tuples.
-//! Run with: cargo run --example example_query
-
-use sparse_ecs::{Component, world::{World, QueryMut}};
+use sparse_ecs::{Component, world::{World, FetchMut}};
 
 #[derive(Component, Copy, Clone)]
 struct Position { x: f32, y: f32 }
@@ -53,8 +50,8 @@ fn spawn_world() -> World {
 }
 
 fn system_move(world: &mut World) {
-    // 2-component query (Position, Velocity)
-    let (positions_opt, velocities_opt) = <(Position, Velocity) as QueryMut>::query(world);
+    // 2-component fetch (Position, Velocity)
+    let (positions_opt, velocities_opt) = <(Position, Velocity) as FetchMut>::fetch(world);
     if let (Some(positions), Some(velocities)) = (positions_opt, velocities_opt) {
         for (entity, pos) in positions.iter_mut() {
             if let Some(vel) = velocities.get(entity) {
@@ -66,8 +63,8 @@ fn system_move(world: &mut World) {
 }
 
 fn system_apply_damage(world: &mut World) {
-    // 3-component query (Health, Damage, Armor)
-    let (health_opt, damage_opt, armor_opt) = <(Health, Damage, Armor) as QueryMut>::query(world);
+    // 3-component fetch (Health, Damage, Armor)
+    let (health_opt, damage_opt, armor_opt) = <(Health, Damage, Armor) as FetchMut>::fetch(world);
     if let (Some(healths), Some(damages), Some(armors)) = (health_opt, damage_opt, armor_opt) {
         for (entity, hp) in healths.iter_mut() {
             let dmg = damages.get(entity).map(|d| d.0).unwrap_or(0);
@@ -80,7 +77,7 @@ fn system_apply_damage(world: &mut World) {
 
 fn sys_so_many_components(world: &mut World) {
     let (pos_opt, vel_opt, hp_opt, mana_opt, dmg_opt, armor_opt) =
-        <(Position, Velocity, Health, Mana, Damage, Armor) as QueryMut>::query(world);
+        <(Position, Velocity, Health, Mana, Damage, Armor) as FetchMut>::fetch(world);
     if let (Some(_p), Some(_v), Some(_hps), Some(manas), Some(_d), Some(_a)) = (pos_opt, vel_opt, hp_opt, mana_opt, dmg_opt, armor_opt) {
         for (_entity, mana) in manas.iter_mut() {
             mana.0 = (mana.0 + 1).min(100);

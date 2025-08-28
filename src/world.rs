@@ -141,37 +141,37 @@ impl World {
     impl_get_mut!(get_six_mut, A, B, C, D, E, F);
 }
 
-pub trait QueryMut<'a> {
+pub trait FetchMut<'a> {
     type Output;
-    fn query(world: &'a mut World) -> Self::Output;
+    fn fetch(world: &'a mut World) -> Self::Output;
 }
 
-impl<'a, A: Component> QueryMut<'a> for (A,) {
+impl<'a, A: Component> FetchMut<'a> for (A,) {
     type Output = Option<&'a mut SparseSet<A>>;
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_mut::<A>()
     }
 }
 
-impl<'a, A: Component, B: Component> QueryMut<'a> for (A, B) {
+impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
     type Output = (Option<&'a mut SparseSet<A>>, Option<&'a mut SparseSet<B>>);
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_two_mut::<A, B>()
     }
 }
 
-impl<'a, A: Component, B: Component, C: Component> QueryMut<'a> for (A, B, C) {
+impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
     type Output = (
         Option<&'a mut SparseSet<A>>,
         Option<&'a mut SparseSet<B>>,
         Option<&'a mut SparseSet<C>>,
     );
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_three_mut::<A, B, C>()
     }
 }
 
-impl<'a, A: Component, B: Component, C: Component, D: Component> QueryMut<'a>
+impl<'a, A: Component, B: Component, C: Component, D: Component> FetchMut<'a>
     for (A, B, C, D)
 {
     type Output = (
@@ -180,12 +180,12 @@ impl<'a, A: Component, B: Component, C: Component, D: Component> QueryMut<'a>
         Option<&'a mut SparseSet<C>>,
         Option<&'a mut SparseSet<D>>,
     );
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_four_mut::<A, B, C, D>()
     }
 }
 
-impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> QueryMut<'a>
+impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> FetchMut<'a>
     for (A, B, C, D, E)
 {
     type Output = (
@@ -195,13 +195,13 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> Q
         Option<&'a mut SparseSet<D>>,
         Option<&'a mut SparseSet<E>>,
     );
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_five_mut::<A, B, C, D, E>()
     }
 }
 
 impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F: Component>
-    QueryMut<'a> for (A, B, C, D, E, F)
+    FetchMut<'a> for (A, B, C, D, E, F)
 {
     type Output = (
         Option<&'a mut SparseSet<A>>,
@@ -211,7 +211,7 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F
         Option<&'a mut SparseSet<E>>,
         Option<&'a mut SparseSet<F>>,
     );
-    fn query(world: &'a mut World) -> Self::Output {
+    fn fetch(world: &'a mut World) -> Self::Output {
         world.get_six_mut::<A, B, C, D, E, F>()
     }
 }
@@ -275,57 +275,57 @@ mod test {
     }
 
     #[test]
-    fn test_querymut_single() {
+    fn test_fetchmut_single() {
         let mut world = super::World::new(5);
         world.add::<MyComponent>();
-        let comp_opt = <(MyComponent,) as super::QueryMut>::query(&mut world);
+        let comp_opt = <(MyComponent,) as super::FetchMut>::fetch(&mut world);
         assert!(comp_opt.is_some());
     }
 
     #[test]
-    fn test_querymut_double() {
+    fn test_fetchmut_double() {
         let mut world = super::World::new(5);
         world.add::<MyComponent>();
         world.add::<Other>();
-        let (a,b) = <(MyComponent, Other) as super::QueryMut>::query(&mut world);
+        let (a,b) = <(MyComponent, Other) as super::FetchMut>::fetch(&mut world);
         assert!(a.is_some() && b.is_some());
     }
 
     #[test]
-    fn test_querymut_triple() {
+    fn test_fetchmut_triple() {
         let mut world = super::World::new(5);
         world.add::<MyComponent>();
         world.add::<Other>();
         world.add::<Third>();
-        let (a,b,c) = <(MyComponent, Other, Third) as super::QueryMut>::query(&mut world);
+        let (a,b,c) = <(MyComponent, Other, Third) as super::FetchMut>::fetch(&mut world);
         assert!(a.is_some() && b.is_some() && c.is_some());
     }
 
     #[test]
-    fn test_querymut_quad() {
+    fn test_fetchmut_quad() {
         let mut world = super::World::new(6);
         world.add::<MyComponent>();
         world.add::<Other>();
         world.add::<Third>();
         world.add::<Fourth>();
-        let (a,b,c,d) = <(MyComponent, Other, Third, Fourth) as super::QueryMut>::query(&mut world);
+        let (a,b,c,d) = <(MyComponent, Other, Third, Fourth) as super::FetchMut>::fetch(&mut world);
         assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some());
     }
 
     #[test]
-    fn test_querymut_five() {
+    fn test_fetchmut_five() {
         let mut world = super::World::new(6);
         world.add::<MyComponent>();
         world.add::<Other>();
         world.add::<Third>();
         world.add::<Fourth>();
         world.add::<Fifth>();
-        let (a,b,c,d,e) = <(MyComponent, Other, Third, Fourth, Fifth) as super::QueryMut>::query(&mut world);
+        let (a,b,c,d,e) = <(MyComponent, Other, Third, Fourth, Fifth) as super::FetchMut>::fetch(&mut world);
         assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some());
     }
 
     #[test]
-    fn test_querymut_six() {
+    fn test_fetchmut_six() {
         let mut world = super::World::new(6);
         world.add::<MyComponent>();
         world.add::<Other>();
@@ -333,7 +333,7 @@ mod test {
         world.add::<Fourth>();
         world.add::<Fifth>();
         world.add::<Sixth>();
-        let (a,b,c,d,e,f) = <(MyComponent, Other, Third, Fourth, Fifth, Sixth) as super::QueryMut>::query(&mut world);
+        let (a,b,c,d,e,f) = <(MyComponent, Other, Third, Fourth, Fifth, Sixth) as super::FetchMut>::fetch(&mut world);
         assert!(a.is_some() && b.is_some() && c.is_some() && d.is_some() && e.is_some() && f.is_some());
     }
 
