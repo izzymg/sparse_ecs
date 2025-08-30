@@ -171,73 +171,107 @@ where
     }
 }
 
-/// HashMap based storage for very sparse components (e.g. only a handful of entities use it).
-/// This avoids allocating a sparse array sized to the whole entity capacity.
+/// HashMap-indexed dense storage for very sparse components.
+/// Uses a `HashMap` to map entity IDs to indices into a dense `Vec<T>` and
+/// a parallel `entities` array for fast, cache-friendly iteration.
 #[derive(Clone, Default)]
 pub struct HashMapSet<T: Send + Sync + Copy + Clone> {
     pub added: Vec<Entity>,
     pub removed: Vec<Entity>,
-    map: HashMap<usize, T>,
+    index: HashMap<usize, usize>,
+    dense: Vec<T>,
+    entities: Vec<usize>,
 }
 
 impl<T> HashMapSet<T>
 where
     T: Send + Sync + Sized + Copy + Clone,
 {
-    /// Creates empty map storage.
+    /// Creates empty dense-map storage.
     pub fn new() -> Self {
         Self {
             added: Vec::new(),
             removed: Vec::new(),
-            map: HashMap::new(),
+            index: HashMap::new(),
+            dense: Vec::new(),
+            entities: Vec::new(),
         }
     }
 
     /// Sets or inserts the data for an entity.
     pub fn set(&mut self, data: T, entity: Entity) {
-        if !self.map.contains_key(&entity.0) {
-            self.added.push(entity);
+        if let Some(&idx) = self.index.get(&entity.0) {
+            self.dense[idx] = data;
+        } else {
+            self.add_entity(data, entity);
         }
-        self.map.insert(entity.0, data);
     }
 
     /// Adds a new entity with the given component data. Panics if already present.
     pub fn add_entity(&mut self, data: T, entity: Entity) {
-        assert!(!self.map.contains_key(&entity.0));
-        self.map.insert(entity.0, data);
+        assert!(!self.index.contains_key(&entity.0));
+        let idx = self.dense.len();
+        self.index.insert(entity.0, idx);
+        self.dense.push(data);
+        self.entities.push(entity.0);
         self.added.push(entity);
     }
 
     /// Removes an entity returning its data.
     pub fn remove_entity(&mut self, entity: Entity) -> Option<T> {
-        let removed = self.map.remove(&entity.0);
-        if removed.is_some() {
-            self.removed.push(entity);
+        let idx = match self.index.remove(&entity.0) {
+            Some(i) => i,
+            None => return None,
+        };
+
+        let last = self.dense.len() - 1;
+        self.entities.swap_remove(idx);
+        let removed = self.dense.swap_remove(idx);
+        if idx != last {
+            // Update index for moved entity
+            let moved_entity = self.entities[idx];
+            self.index.insert(moved_entity, idx);
         }
-        removed
+        self.removed.push(entity);
+        Some(removed)
     }
 
     pub fn get(&self, entity: Entity) -> Option<&T> {
-        self.map.get(&entity.0)
+        self.index
+            .get(&entity.0)
+            .map(|&idx| &self.dense[idx])
     }
     pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-        self.map.get_mut(&entity.0)
+        if let Some(&idx) = self.index.get(&entity.0) {
+            // Safety: exclusive &mut self, index is valid by construction
+            Some(&mut self.dense[idx])
+        } else {
+            None
+        }
     }
     pub fn has(&self, entity: Entity) -> bool {
-        self.map.contains_key(&entity.0)
+        self.index.contains_key(&entity.0)
     }
     pub fn len(&self) -> usize {
-        self.map.len()
+        self.dense.len()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Entity, &T)> {
-        self.map.iter().map(|(id, v)| (Entity(*id), v))
+        self.entities
+            .iter()
+            .copied()
+            .zip(self.dense.iter())
+            .map(|(id, v)| (Entity(id), v))
     }
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
-        self.map.iter_mut().map(|(id, v)| (Entity(*id), v))
+        self.entities
+            .iter()
+            .copied()
+            .zip(self.dense.iter_mut())
+            .map(|(id, v)| (Entity(id), v))
     }
     pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
-        self.map.keys().copied().map(Entity)
+        self.entities.iter().copied().map(Entity)
     }
 }
 
@@ -557,6 +591,148 @@ mod tests {
         for (_e, v) in component.iter() {
             assert!(*v >= 1);
         }
+    }
+
+    #[test]
+    fn hashmap_iter() {
+        let mut component = super::HashMapSet::<u32>::new();
+        for i in 0..5 {
+            component.add_entity(i as u32, Entity(i));
+        }
+        for (_entity, data) in component.iter_mut() {
+            *data = 5;
+        }
+        for (_entity, data) in component.iter() {
+            assert_eq!(*data, 5);
+        }
+    }
+
+    #[test]
+    fn hashmap_add_remove() {
+        let mut component = super::HashMapSet::<usize>::new();
+        component.add_entity(1, Entity(0));
+        component.add_entity(2, Entity(1));
+        component.add_entity(3, Entity(2));
+        let removed = component.remove_entity(Entity(1));
+        assert_eq!(removed, Some(2));
+        let c = component.get(Entity(2));
+        assert_eq!(c, Some(&3));
+        let removed_c = component.remove_entity(Entity(2));
+        assert_eq!(removed_c, Some(3));
+        assert_eq!(component.get(Entity(2)), None);
+    }
+
+    #[test]
+    fn hashmap_mutation() {
+        let mut component = super::HashMapSet::<u32>::new();
+        let data1 = 10;
+        let updated = 6;
+        let data2 = 5;
+        component.add_entity(data1, Entity(0));
+        component.add_entity(data2, Entity(1));
+        let data = component.get_mut(Entity(0)).unwrap();
+        *data = updated;
+        assert_eq!(*component.get(Entity(0)).unwrap(), updated);
+        assert_eq!(*component.get(Entity(1)).unwrap(), data2);
+    }
+
+    #[test]
+    fn hashmap_added_removed_tracking() {
+        let mut component = super::HashMapSet::<u32>::new();
+
+        assert!(component.added.is_empty());
+        assert!(component.removed.is_empty());
+
+        component.add_entity(10, Entity(0));
+        component.add_entity(20, Entity(1));
+        component.add_entity(30, Entity(2));
+
+        assert_eq!(component.added.len(), 3);
+        assert!(component.added.contains(&Entity(0)));
+        assert!(component.added.contains(&Entity(1)));
+        assert!(component.added.contains(&Entity(2)));
+        assert!(component.removed.is_empty());
+
+        let removed_data = component.remove_entity(Entity(1));
+        assert_eq!(removed_data, Some(20));
+        assert_eq!(component.removed.len(), 1);
+        assert!(component.removed.contains(&Entity(1)));
+        assert_eq!(component.added.len(), 3);
+
+        component.remove_entity(Entity(2));
+        assert_eq!(component.removed.len(), 2);
+        assert!(component.removed.contains(&Entity(1)));
+        assert!(component.removed.contains(&Entity(2)));
+
+        let not_removed = component.remove_entity(Entity(3));
+        assert_eq!(not_removed, None);
+        assert_eq!(component.removed.len(), 2);
+
+        component.add_entity(40, Entity(1));
+        assert_eq!(component.added.len(), 4);
+        assert!(component.added.contains(&Entity(1)));
+
+        let entity1_count = component
+            .added
+            .iter()
+            .filter(|&&e| e == Entity(1))
+            .count();
+        assert_eq!(entity1_count, 2);
+    }
+
+    #[test]
+    fn bench_iter_compare_sparse_vs_hashmap() {
+        use std::time::Instant;
+        const N: usize = 50_000;
+
+        // SparseSet setup
+        let mut sparse = super::SparseSet::<u32>::new(N.max(1));
+        for i in 0..N {
+            sparse.add_entity(i as u32, Entity(i));
+        }
+
+        // HashMapSet setup
+        let mut map = super::HashMapSet::<u32>::new();
+        for i in 0..N {
+            map.add_entity(i as u32, Entity(i));
+        }
+
+        // Mutation pass timing
+        let t0 = Instant::now();
+        for (_e, v) in sparse.iter_mut() {
+            *v = v.wrapping_add(1);
+        }
+        let sparse_mut = t0.elapsed();
+
+        let t0 = Instant::now();
+        for (_e, v) in map.iter_mut() {
+            *v = v.wrapping_add(1);
+        }
+        let map_mut = t0.elapsed();
+
+        // Read pass timing
+        let t0 = Instant::now();
+        let mut sum = 0u64;
+        for (_e, v) in sparse.iter() {
+            sum = sum.wrapping_add(*v as u64);
+        }
+        let _ = sum;
+        let sparse_read = t0.elapsed();
+
+        let t0 = Instant::now();
+        let mut sum2 = 0u64;
+        for (_e, v) in map.iter() {
+            sum2 = sum2.wrapping_add(*v as u64);
+        }
+        let _ = sum2;
+        let map_read = t0.elapsed();
+
+        println!(
+            "N={N} sparse_mut={:?} map_mut={:?} sparse_read={:?} map_read={:?}",
+            sparse_mut, map_mut, sparse_read, map_read
+        );
+
+        assert_eq!(sparse.len(), map.len());
     }
 
     #[test]
