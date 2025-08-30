@@ -48,14 +48,14 @@ impl<T> SparseSet<T>
 where
     T: Send + Sync + Sized + Copy + Clone,
 {
-    /// Creates a new component storage with the given capacity.
-    pub fn new(capacity: usize) -> Self {
+    /// Creates sparse set storage with the given max entity count.
+    pub fn new(entity_count: usize) -> Self {
         Self {
             added: Vec::new(),
             removed: Vec::new(),
-            sparse: vec![None; capacity],
-            dense: Vec::with_capacity(capacity),
-            entities: Vec::with_capacity(capacity),
+            sparse: vec![None; entity_count],
+            dense: Vec::new(),
+            entities: Vec::new(),
         }
     }
 
