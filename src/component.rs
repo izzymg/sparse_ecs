@@ -27,10 +27,10 @@ impl FromStr for Entity {
     }
 }
 
-/// Stores component data for entities using a sparse set.
-/// - `sparse`: Maps entity IDs to indices in the dense array.
-/// - `dense`: Stores the actual component data.
-/// - `entities`: Stores the entity IDs corresponding to each dense index.
+/// Stores component data in the classic sparse set layout.
+/// - `sparse`: maps entity IDs to indices in the dense array
+/// - `dense`: component data, tightly packed
+/// - `entities`: entity IDs aligned with `dense`
 #[derive(Clone)]
 pub struct SparseSet<T: Send + Sync + Copy + Clone> {
     // Tracks every entity that has been added to this sparseset
@@ -172,8 +172,7 @@ where
 }
 
 /// HashMap-indexed dense storage for very sparse components.
-/// Uses a `HashMap` to map entity IDs to indices into a dense `Vec<T>` and
-/// a parallel `entities` array for fast, cache-friendly iteration.
+/// Maps `entity -> dense index` and keeps data/ids dense for fast iteration.
 #[derive(Clone, Default)]
 pub struct HashMapSet<T: Send + Sync + Copy + Clone> {
     pub added: Vec<Entity>,

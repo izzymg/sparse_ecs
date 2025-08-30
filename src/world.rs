@@ -20,6 +20,7 @@ pub struct World {
 }
 
 /// Which backing storage to use for a component type.
+/// Pick per component depending on density/access patterns.
 pub enum ComponentStorageKind {
     Sparse,
     HashMap,
@@ -81,7 +82,8 @@ impl World {
         true
     }
 
-    /// Adds a component type choosing storage backend.
+    /// Adds a component type choosing a storage backend.
+    /// `Sparse` is a classic sparse set; `HashMap` uses a hashmap-indexed dense layout.
     pub fn add_with_storage<T: Component>(&mut self, kind: ComponentStorageKind) -> bool {
         let key = TypeId::of::<T>();
         if self.map.contains_key(&key) {
