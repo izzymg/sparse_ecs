@@ -27,31 +27,47 @@ impl FromStr for Entity {
     }
 }
 
-/// Stores component data in the classic sparse set layout.
-/// - `sparse`: maps entity IDs to indices in the dense array
-/// - `dense`: component data, tightly packed
-/// - `entities`: entity IDs aligned with `dense`
 #[derive(Clone)]
-pub struct SparseSet<T: Send + Sync + Copy + Clone> {
-    // Tracks every entity that has been added to this sparseset
+enum SparseIndex {
+    Vec(Vec<Option<usize>>),
+    Map(HashMap<usize, usize>),
+}
+
+/// Unified component storage that can use either a sparse vector index or a hashmap index.
+/// This allows a single concrete storage type to be used throughout the World API while
+/// still choosing an indexing strategy per component type.
+#[derive(Clone)]
+pub struct Storage<T: Send + Sync + Copy + Clone> {
     pub added: Vec<Entity>,
-    // Tracks every entity that has been removed from this sparseset
     pub removed: Vec<Entity>,
-    sparse: Vec<Option<usize>>,
+    index: SparseIndex,
     dense: Vec<T>,
     entities: Vec<usize>,
 }
 
-impl<T> SparseSet<T>
+
+
+impl<T> Storage<T>
 where
     T: Send + Sync + Sized + Copy + Clone,
 {
-    /// Creates sparse set storage with the given max entity count.
-    pub fn new(entity_count: usize) -> Self {
+    /// Create storage backed by a sparse vector of size `entity_count`.
+    pub fn new_sparse(entity_count: usize) -> Self {
         Self {
             added: Vec::new(),
             removed: Vec::new(),
-            sparse: vec![None; entity_count],
+            index: SparseIndex::Vec(vec![None; entity_count]),
+            dense: Vec::new(),
+            entities: Vec::new(),
+        }
+    }
+
+    /// Create storage backed by a hashmap index.
+    pub fn new_hashmap() -> Self {
+        Self {
+            added: Vec::new(),
+            removed: Vec::new(),
+            index: SparseIndex::Map(HashMap::new()),
             dense: Vec::new(),
             entities: Vec::new(),
         }
@@ -60,20 +76,34 @@ where
     /// Sets the data for the given entity, replacing any existing data.
     /// If the entity does not exist, it will be added.
     pub fn set(&mut self, data: T, entity: Entity) {
-        if let Some(idx) = self.sparse[entity.0] {
-            // Update existing entity
-            self.dense[idx] = data;
-        } else {
-            // Add new entity
-            self.add_entity(data, entity);
+        match &mut self.index {
+            SparseIndex::Vec(sparse) => match sparse[entity.0] {
+                Some(idx) => self.dense[idx] = data,
+                None => self.add_entity(data, entity),
+            },
+            SparseIndex::Map(index) => {
+                if let Some(&idx) = index.get(&entity.0) {
+                    self.dense[idx] = data;
+                } else {
+                    self.add_entity(data, entity);
+                }
+            }
         }
     }
 
-    /// Adds a new entity with the given component data.
-    /// Panics if the entity already exists in this component.
+    /// Adds a new entity with the given component data. Panics if the entity already exists.
     pub fn add_entity(&mut self, data: T, entity: Entity) {
-        assert_eq!(self.sparse[entity.0], None);
-        self.sparse[entity.0] = Some(self.dense.len());
+        let idx = self.dense.len();
+        match &mut self.index {
+            SparseIndex::Vec(sparse) => {
+                assert_eq!(sparse[entity.0], None);
+                sparse[entity.0] = Some(idx);
+            }
+            SparseIndex::Map(index) => {
+                assert!(!index.contains_key(&entity.0));
+                index.insert(entity.0, idx);
+            }
+        }
         self.dense.push(data);
         self.entities.push(entity.0);
         self.added.push(entity);
@@ -81,42 +111,82 @@ where
 
     /// Removes an entity and returns its component data, if present.
     pub fn remove_entity(&mut self, entity: Entity) -> Option<T> {
-        match self.sparse[entity.0] {
-            Some(idx) => {
-                self.sparse[entity.0] = None;
-                let last = self.dense.len() - 1;
-                self.entities.swap_remove(idx);
-                let removed = self.dense.swap_remove(idx);
-                if idx != last {
-                    // Update sparse for the entity that was moved
-                    let moved_entity = self.entities[idx];
-                    self.sparse[moved_entity] = Some(idx);
-                }
-                self.removed.push(entity);
-                Some(removed)
+        let idx_opt = match &mut self.index {
+            SparseIndex::Vec(sparse) => {
+                let idx = sparse[entity.0]?;
+                sparse[entity.0] = None;
+                Some(idx)
             }
-            None => None,
+            SparseIndex::Map(index) => index.remove(&entity.0),
+        };
+
+        let idx = match idx_opt {
+            Some(i) => i,
+            None => return None,
+        };
+
+        let last = self.dense.len() - 1;
+        self.entities.swap_remove(idx);
+        let removed = self.dense.swap_remove(idx);
+        if idx != last {
+            // Update index for the entity that was moved
+            let moved_entity = self.entities[idx];
+            match &mut self.index {
+                SparseIndex::Vec(sparse) => {
+                    sparse[moved_entity] = Some(idx);
+                }
+                SparseIndex::Map(index) => {
+                    index.insert(moved_entity, idx);
+                }
+            }
         }
+        self.removed.push(entity);
+        Some(removed)
     }
 
     /// Gets a reference to the component data for the given entity.
     pub fn get(&self, entity: Entity) -> Option<&T> {
-        match self.sparse[entity.0] {
-            Some(idx) => Some(&self.dense[idx]),
-            None => None,
+        match &self.index {
+            SparseIndex::Vec(sparse) => Some(&self.dense[sparse[entity.0]?]),
+            SparseIndex::Map(index) => Some(&self.dense[*index.get(&entity.0)?]),
         }
     }
+
     /// Gets a mutable reference to the component data for the given entity.
     pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-        match self.sparse[entity.0] {
-            Some(idx) => Some(&mut self.dense[idx]),
-            None => None,
-        }
+        let idx = match &self.index {
+            SparseIndex::Vec(sparse) => {
+                 sparse[entity.0]?
+            }
+            SparseIndex::Map(index) => {
+                 *index.get(&entity.0)?
+            }
+        };
+        self.dense.get_mut(idx)
+    }
+
+
+    /// Gets a mutable reference to the component data for the given entity. Unsafe/unchecked.
+    pub fn get_mut_unchecked(&mut self, entity: Entity) -> Option<&mut T> {
+
+        let idx = match &self.index {
+            SparseIndex::Vec(sparse) => {
+                 sparse[entity.0]?
+            }
+            SparseIndex::Map(index) => {
+                 *index.get(&entity.0)?
+            }
+        };
+        // Safety: index was checked above
+        unsafe { Some(self.dense.get_unchecked_mut(idx)) }
     }
 
     /// Returns true if the component contains data for the given entity.
     pub fn has(&self, entity: Entity) -> bool {
-        self.sparse[entity.0].is_some()
+        match &self.index {
+            SparseIndex::Vec(sparse) => sparse[entity.0].is_some(),
+            SparseIndex::Map(index) => index.contains_key(&entity.0),
+        }
     }
 
     /// Returns the number of entities with this component.
@@ -126,26 +196,22 @@ where
 
     /// Uses unsafe to iterate the ECS a bit faster.
     pub fn iter_unchecked(&self) -> impl Iterator<Item = (Entity, &T)> {
-        // Safety: `entities` and `dense` are always the same length
         debug_assert_eq!(self.entities.len(), self.dense.len());
         unsafe {
             let entities_ptr = self.entities.as_ptr();
             let dense_ptr = self.dense.as_ptr();
             let len = self.entities.len();
-
             (0..len).map(move |i| (Entity(*entities_ptr.add(i)), &*dense_ptr.add(i)))
         }
     }
 
     /// Uses unsafe to iterate the ECS a bit faster (mutable ref to the component data).
     pub fn iter_mut_unchecked(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
-        // Safety: `entities` and `dense` are always the same length
         debug_assert_eq!(self.entities.len(), self.dense.len());
         unsafe {
             let entities_ptr = self.entities.as_ptr();
             let dense_ptr = self.dense.as_mut_ptr();
             let len = self.entities.len();
-
             (0..len).map(move |i| (Entity(*entities_ptr.add(i)), &mut *dense_ptr.add(i)))
         }
     }
@@ -168,109 +234,6 @@ where
 
     pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
         self.entities.iter().map(|&id| Entity(id))
-    }
-}
-
-/// HashMap-indexed dense storage for very sparse components.
-/// Maps `entity -> dense index` and keeps data/ids dense for fast iteration.
-#[derive(Clone, Default)]
-pub struct HashMapSet<T: Send + Sync + Copy + Clone> {
-    pub added: Vec<Entity>,
-    pub removed: Vec<Entity>,
-    index: HashMap<usize, usize>,
-    dense: Vec<T>,
-    entities: Vec<usize>,
-}
-
-impl<T> HashMapSet<T>
-where
-    T: Send + Sync + Sized + Copy + Clone,
-{
-    /// Creates empty dense-map storage.
-    pub fn new() -> Self {
-        Self {
-            added: Vec::new(),
-            removed: Vec::new(),
-            index: HashMap::new(),
-            dense: Vec::new(),
-            entities: Vec::new(),
-        }
-    }
-
-    /// Sets or inserts the data for an entity.
-    pub fn set(&mut self, data: T, entity: Entity) {
-        if let Some(&idx) = self.index.get(&entity.0) {
-            self.dense[idx] = data;
-        } else {
-            self.add_entity(data, entity);
-        }
-    }
-
-    /// Adds a new entity with the given component data. Panics if already present.
-    pub fn add_entity(&mut self, data: T, entity: Entity) {
-        assert!(!self.index.contains_key(&entity.0));
-        let idx = self.dense.len();
-        self.index.insert(entity.0, idx);
-        self.dense.push(data);
-        self.entities.push(entity.0);
-        self.added.push(entity);
-    }
-
-    /// Removes an entity returning its data.
-    pub fn remove_entity(&mut self, entity: Entity) -> Option<T> {
-        let idx = match self.index.remove(&entity.0) {
-            Some(i) => i,
-            None => return None,
-        };
-
-        let last = self.dense.len() - 1;
-        self.entities.swap_remove(idx);
-        let removed = self.dense.swap_remove(idx);
-        if idx != last {
-            // Update index for moved entity
-            let moved_entity = self.entities[idx];
-            self.index.insert(moved_entity, idx);
-        }
-        self.removed.push(entity);
-        Some(removed)
-    }
-
-    pub fn get(&self, entity: Entity) -> Option<&T> {
-        self.index
-            .get(&entity.0)
-            .map(|&idx| &self.dense[idx])
-    }
-    pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-        if let Some(&idx) = self.index.get(&entity.0) {
-            // Safety: exclusive &mut self, index is valid by construction
-            Some(&mut self.dense[idx])
-        } else {
-            None
-        }
-    }
-    pub fn has(&self, entity: Entity) -> bool {
-        self.index.contains_key(&entity.0)
-    }
-    pub fn len(&self) -> usize {
-        self.dense.len()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Entity, &T)> {
-        self.entities
-            .iter()
-            .copied()
-            .zip(self.dense.iter())
-            .map(|(id, v)| (Entity(id), v))
-    }
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
-        self.entities
-            .iter()
-            .copied()
-            .zip(self.dense.iter_mut())
-            .map(|(id, v)| (Entity(id), v))
-    }
-    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
-        self.entities.iter().copied().map(Entity)
     }
 }
 
@@ -318,9 +281,9 @@ mod tests {
 
     #[test]
     fn joining() {
-        let mut positions = SparseSet::<Vec2>::new(100);
-        let mut velocities = SparseSet::<Vec2>::new(100);
-        let mut colors = SparseSet::<u32>::new(100);
+        let mut positions = Storage::<Vec2>::new_sparse(100);
+        let mut velocities = Storage::<Vec2>::new_sparse(100);
+        let mut colors = Storage::<u32>::new_sparse(100);
         positions.add_entity(Vec2 { x: 25, y: 35 }, Entity(0));
         positions.add_entity(Vec2 { x: 25, y: 35 }, Entity(1));
         positions.add_entity(Vec2 { x: 25, y: 35 }, Entity(6));
@@ -347,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_iter() {
-        let mut component = SparseSet::<u32>::new(5);
+        let mut component = Storage::<u32>::new_sparse(5);
         for i in 0..5 {
             component.add_entity(i, Entity(i.try_into().unwrap()));
         }
@@ -361,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_iter_big_safe() {
-        let mut component = SparseSet::<u32>::new(1000);
+        let mut component = Storage::<u32>::new_sparse(1000);
         for i in 0..1000 {
             component.add_entity(i, Entity(i.try_into().unwrap()));
         }
@@ -379,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_iter_big_unsafe() {
-        let mut component = SparseSet::<u32>::new(1000);
+        let mut component = Storage::<u32>::new_sparse(1000);
         for i in 0..1000 {
             component.add_entity(i, Entity(i.try_into().unwrap()));
         }
@@ -397,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_add_remove() {
-        let mut component = SparseSet::<usize>::new(3);
+        let mut component = Storage::<usize>::new_sparse(3);
         component.add_entity(1, Entity(0));
         component.add_entity(2, Entity(1));
         component.add_entity(3, Entity(2));
@@ -412,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_mutation() {
-        let mut component = SparseSet::<u32>::new(5);
+        let mut component = Storage::<u32>::new_sparse(5);
         let data1 = 10;
         let updated = 6;
         let data2 = 5;
@@ -434,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_added_removed_tracking() {
-        let mut component = SparseSet::<u32>::new(5);
+        let mut component = Storage::<u32>::new_sparse(5);
 
         // Initially, both vectors should be empty
         assert!(component.added.is_empty());
@@ -490,7 +453,7 @@ mod tests {
 
     #[test]
     fn hashmap_basic() {
-        let mut component = super::HashMapSet::<u32>::new();
+        let mut component = super::Storage::<u32>::new_hashmap();
         component.add_entity(10, Entity(1));
         assert_eq!(component.get(Entity(1)), Some(&10));
         component.set(15, Entity(1));
@@ -502,7 +465,7 @@ mod tests {
 
     #[test]
     fn hashmap_iter_mut() {
-        let mut component = super::HashMapSet::<u32>::new();
+        let mut component = super::Storage::<u32>::new_hashmap();
         for i in 0..5 {
             component.add_entity(i as u32, Entity(i));
         }
@@ -516,7 +479,7 @@ mod tests {
 
     #[test]
     fn hashmap_iter() {
-        let mut component = super::HashMapSet::<u32>::new();
+        let mut component = super::Storage::<u32>::new_hashmap();
         for i in 0..5 {
             component.add_entity(i as u32, Entity(i));
         }
@@ -530,7 +493,7 @@ mod tests {
 
     #[test]
     fn hashmap_add_remove() {
-        let mut component = super::HashMapSet::<usize>::new();
+        let mut component = super::Storage::<usize>::new_hashmap();
         component.add_entity(1, Entity(0));
         component.add_entity(2, Entity(1));
         component.add_entity(3, Entity(2));
@@ -545,7 +508,7 @@ mod tests {
 
     #[test]
     fn hashmap_mutation() {
-        let mut component = super::HashMapSet::<u32>::new();
+        let mut component = super::Storage::<u32>::new_hashmap();
         let data1 = 10;
         let updated = 6;
         let data2 = 5;
@@ -559,7 +522,7 @@ mod tests {
 
     #[test]
     fn hashmap_added_removed_tracking() {
-        let mut component = super::HashMapSet::<u32>::new();
+        let mut component = super::Storage::<u32>::new_hashmap();
 
         assert!(component.added.is_empty());
         assert!(component.removed.is_empty());
@@ -606,14 +569,14 @@ mod tests {
         use std::time::Instant;
         const N: usize = 50_000;
 
-        // SparseSet setup
-        let mut sparse = super::SparseSet::<u32>::new(N.max(1));
+        // Sparse backend setup
+        let mut sparse = super::Storage::<u32>::new_sparse(N.max(1));
         for i in 0..N {
             sparse.add_entity(i as u32, Entity(i));
         }
 
-        // HashMapSet setup
-        let mut map = super::HashMapSet::<u32>::new();
+        // HashMap backend setup
+        let mut map = super::Storage::<u32>::new_hashmap();
         for i in 0..N {
             map.add_entity(i as u32, Entity(i));
         }
@@ -658,9 +621,9 @@ mod tests {
 
     #[test]
     fn trait_object_usage() {
-        // Use trait object abstraction to manipulate either backend.
-        let mut sparse: super::SparseSet<u32> = super::SparseSet::new(10);
-        let mut map: super::HashMapSet<u32> = super::HashMapSet::new();
+        // Manipulate either backend via unified Storage type.
+        let mut sparse: super::Storage<u32> = super::Storage::new_sparse(10);
+        let mut map: super::Storage<u32> = super::Storage::new_hashmap();
         let s_store = &mut sparse;
         let m_store = &mut map;
         s_store.add_entity(5, Entity(0));

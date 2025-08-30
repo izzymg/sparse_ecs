@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    component::{self, Entity, HashMapSet, SparseSet},
+    component::{self, Entity, Storage},
     tags,
 };
 
@@ -69,11 +69,11 @@ impl World {
     }
 
     /// Adds a component type to the world.
-    /// This will create a new `SparseSet` for the component type.
+    /// This will create a new `Storage` with a sparse vector index for the component type.
     /// Returns `false` if the component type already exists.
     pub fn add<T: Component>(&mut self) -> bool {
         let key = TypeId::of::<T>();
-        let set = SparseSet::<T>::new(self.size);
+        let set = Storage::<T>::new_sparse(self.size);
         if self.map.contains_key(&key) {
             return false;
         }
@@ -83,7 +83,7 @@ impl World {
     }
 
     /// Adds a component type choosing a storage backend.
-    /// `Sparse` is a classic sparse set; `HashMap` uses a hashmap-indexed dense layout.
+    /// `Sparse` uses a classic sparse vector index; `HashMap` uses a hashmap-indexed dense layout.
     pub fn add_with_storage<T: Component>(&mut self, kind: ComponentStorageKind) -> bool {
         let key = TypeId::of::<T>();
         if self.map.contains_key(&key) {
@@ -91,67 +91,39 @@ impl World {
         }
         match kind {
             ComponentStorageKind::Sparse => {
-                self.map
-                    .insert(key, Box::new(SparseSet::<T>::new(self.size)));
+                self.map.insert(key, Box::new(Storage::<T>::new_sparse(self.size)));
             }
             ComponentStorageKind::HashMap => {
-                self.map.insert(key, Box::new(HashMapSet::<T>::new()));
+                self.map.insert(key, Box::new(Storage::<T>::new_hashmap()));
             }
         }
         true
     }
 
-    /// Returns an iterator over the component SparseSet, or empty if not present.
+    /// Returns an iterator over the component storage, or empty if not present.
     pub fn iter<T: Component>(&self) -> impl Iterator<Item = (Entity, &T)> {
         self.get::<T>().into_iter().flat_map(|set| set.iter())
     }
 
-    /// Returns an iterator over the component SparseSet, or empty if not present.
+    /// Returns an iterator over the component storage, or empty if not present.
     pub fn iter_mut<T: Component>(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
         self.get_mut::<T>()
             .into_iter()
             .flat_map(|set| set.iter_mut())
     }
 
-    /// Retrieves a `SparseSet` for the component type from the world, if present.
-    pub fn get_sparse<T: Component>(&self) -> Option<&SparseSet<T>> {
+    /// Retrieves storage for the component type from the world, if present.
+    pub fn get<T: Component>(&self) -> Option<&Storage<T>> {
         let key = TypeId::of::<T>();
         let comp = self.map.get(&key);
-
-        comp?.downcast_ref::<SparseSet<T>>()
-    }
-
-    /// Retrieves a `SparseSet` for the component type from the world, if present.
-    pub fn get_sparse_mut<T: Component>(&mut self) -> Option<&mut SparseSet<T>> {
-        let comp = self.map.get_mut(&TypeId::of::<T>());
-
-        comp.as_ref()?;
-        let comp = comp.unwrap();
-        comp.downcast_mut::<SparseSet<T>>()
-    }
-
-    /// Try to get a HashMapSet for the component type.
-    pub fn get_hashmap<T: Component>(&self) -> Option<&HashMapSet<T>> {
-        self.map
-            .get(&TypeId::of::<T>())?
-            .downcast_ref::<HashMapSet<T>>()
-    }
-
-    /// Mutable access to HashMapSet storage if used.
-    pub fn get_hashmap_mut<T: Component>(&mut self) -> Option<&mut HashMapSet<T>> {
-        let comp = self.map.get_mut(&TypeId::of::<T>());
-        comp.as_ref()?;
-        comp.unwrap().downcast_mut::<HashMapSet<T>>()
-    }
-
-    /// Returns a SpaseSet storage (default).
-    pub fn get<T: Component>(&self) -> Option<&SparseSet<T>> {
-        self.get_sparse()
+        comp?.downcast_ref::<Storage<T>>()
     }
 
     /// Mutable variant of `get`.
-    pub fn get_mut<T: Component>(&mut self) -> Option<&mut SparseSet<T>> {
-        self.get_sparse_mut()
+    pub fn get_mut<T: Component>(&mut self) -> Option<&mut Storage<T>> {
+        let comp = self.map.get_mut(&TypeId::of::<T>());
+        comp.as_ref()?;
+        comp.unwrap().downcast_mut::<Storage<T>>()
     }
 }
 
@@ -161,7 +133,7 @@ macro_rules! impl_get_mut {
     ($name:ident, $( $ty:ident ),+) => {
         pub fn $name<$($ty: Component),+>(
             &mut self
-        ) -> ( $( Option<&mut SparseSet<$ty>> ),+ ) {
+        ) -> ( $( Option<&mut Storage<$ty>> ),+ ) {
             let keys = [ $( &TypeId::of::<$ty>() ),+ ];
             let slots = self.map.get_disjoint_mut(keys);
 
@@ -170,7 +142,7 @@ macro_rules! impl_get_mut {
             (
                 $(
                     it.next().unwrap()
-                        .and_then(|s| s.downcast_mut::<SparseSet<$ty>>()),
+                        .and_then(|s| s.downcast_mut::<Storage<$ty>>()),
                 )+
             )
         }
@@ -192,14 +164,14 @@ pub trait FetchMut<'a> {
 }
 
 impl<'a, A: Component> FetchMut<'a> for (A,) {
-    type Output = &'a mut SparseSet<A>;
+    type Output = &'a mut Storage<A>;
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         world.get_mut::<A>()
     }
 }
 
 impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
-    type Output = (&'a mut SparseSet<A>, &'a mut SparseSet<B>);
+    type Output = (&'a mut Storage<A>, &'a mut Storage<B>);
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b) = world.get_two_mut::<A, B>();
         Some((a?, b?))
@@ -208,9 +180,9 @@ impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
 
 impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
     type Output = (
-        &'a mut SparseSet<A>,
-        &'a mut SparseSet<B>,
-        &'a mut SparseSet<C>,
+        &'a mut Storage<A>,
+        &'a mut Storage<B>,
+        &'a mut Storage<C>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c) = world.get_three_mut::<A, B, C>();
@@ -220,10 +192,10 @@ impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
 
 impl<'a, A: Component, B: Component, C: Component, D: Component> FetchMut<'a> for (A, B, C, D) {
     type Output = (
-        &'a mut SparseSet<A>,
-        &'a mut SparseSet<B>,
-        &'a mut SparseSet<C>,
-        &'a mut SparseSet<D>,
+        &'a mut Storage<A>,
+        &'a mut Storage<B>,
+        &'a mut Storage<C>,
+        &'a mut Storage<D>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d) = world.get_four_mut::<A, B, C, D>();
@@ -235,11 +207,11 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> F
     for (A, B, C, D, E)
 {
     type Output = (
-        &'a mut SparseSet<A>,
-        &'a mut SparseSet<B>,
-        &'a mut SparseSet<C>,
-        &'a mut SparseSet<D>,
-        &'a mut SparseSet<E>,
+        &'a mut Storage<A>,
+        &'a mut Storage<B>,
+        &'a mut Storage<C>,
+        &'a mut Storage<D>,
+        &'a mut Storage<E>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d, e) = world.get_five_mut::<A, B, C, D, E>();
@@ -251,12 +223,12 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F
     FetchMut<'a> for (A, B, C, D, E, F)
 {
     type Output = (
-        &'a mut SparseSet<A>,
-        &'a mut SparseSet<B>,
-        &'a mut SparseSet<C>,
-        &'a mut SparseSet<D>,
-        &'a mut SparseSet<E>,
-        &'a mut SparseSet<F>,
+        &'a mut Storage<A>,
+        &'a mut Storage<B>,
+        &'a mut Storage<C>,
+        &'a mut Storage<D>,
+        &'a mut Storage<E>,
+        &'a mut Storage<F>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d, e, f) = world.get_six_mut::<A, B, C, D, E, F>();
