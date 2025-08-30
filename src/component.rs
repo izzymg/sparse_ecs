@@ -276,9 +276,11 @@ impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for SparseSet<T> {
     fn len(&self) -> usize {
         Self::len(self)
     }
+    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
     fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
         Box::new(SparseSet::iter(self))
     }
+    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
     fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
         Box::new(SparseSet::iter_mut(self))
     }
@@ -306,9 +308,12 @@ impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for HashMapSet<T> 
     fn len(&self) -> usize {
         HashMapSet::len(self)
     }
+
+    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
     fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
         Box::new(HashMapSet::iter(self))
     }
+    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
     fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
         Box::new(HashMapSet::iter_mut(self))
     }
