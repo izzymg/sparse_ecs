@@ -1,8 +1,6 @@
 // Sparse set component storage for the ecs
 
-use std::{
-    str::FromStr,
-};
+use std::{collections::HashMap, str::FromStr};
 
 use std::fmt::Debug;
 
@@ -135,12 +133,7 @@ where
             let dense_ptr = self.dense.as_ptr();
             let len = self.entities.len();
 
-            (0..len).map(move |i| {
-                (
-                    Entity(*entities_ptr.add(i)),
-                    &*dense_ptr.add(i),
-                )
-            })
+            (0..len).map(move |i| (Entity(*entities_ptr.add(i)), &*dense_ptr.add(i)))
         }
     }
 
@@ -153,12 +146,7 @@ where
             let dense_ptr = self.dense.as_mut_ptr();
             let len = self.entities.len();
 
-            (0..len).map(move |i| {
-                (
-                    Entity(*entities_ptr.add(i)),
-                    &mut *dense_ptr.add(i),
-                )
-            })
+            (0..len).map(move |i| (Entity(*entities_ptr.add(i)), &mut *dense_ptr.add(i)))
         }
     }
 
@@ -183,6 +171,148 @@ where
     }
 }
 
+/// HashMap based storage for very sparse components (e.g. only a handful of entities use it).
+/// This avoids allocating a sparse array sized to the whole entity capacity.
+#[derive(Clone, Default)]
+pub struct HashMapSet<T: Send + Sync + Copy + Clone> {
+    pub added: Vec<Entity>,
+    pub removed: Vec<Entity>,
+    map: HashMap<usize, T>,
+}
+
+impl<T> HashMapSet<T>
+where
+    T: Send + Sync + Sized + Copy + Clone,
+{
+    /// Creates empty map storage.
+    pub fn new() -> Self {
+        Self {
+            added: Vec::new(),
+            removed: Vec::new(),
+            map: HashMap::new(),
+        }
+    }
+
+    /// Sets or inserts the data for an entity.
+    pub fn set(&mut self, data: T, entity: Entity) {
+        if !self.map.contains_key(&entity.0) {
+            self.added.push(entity);
+        }
+        self.map.insert(entity.0, data);
+    }
+
+    /// Adds a new entity with the given component data. Panics if already present.
+    pub fn add_entity(&mut self, data: T, entity: Entity) {
+        assert!(!self.map.contains_key(&entity.0));
+        self.map.insert(entity.0, data);
+        self.added.push(entity);
+    }
+
+    /// Removes an entity returning its data.
+    pub fn remove_entity(&mut self, entity: Entity) -> Option<T> {
+        let removed = self.map.remove(&entity.0);
+        if removed.is_some() {
+            self.removed.push(entity);
+        }
+        removed
+    }
+
+    pub fn get(&self, entity: Entity) -> Option<&T> {
+        self.map.get(&entity.0)
+    }
+    pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+        self.map.get_mut(&entity.0)
+    }
+    pub fn has(&self, entity: Entity) -> bool {
+        self.map.contains_key(&entity.0)
+    }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Entity, &T)> {
+        self.map.iter().map(|(id, v)| (Entity(*id), v))
+    }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Entity, &mut T)> {
+        self.map.iter_mut().map(|(id, v)| (Entity(*id), v))
+    }
+    pub fn entities(&self) -> impl Iterator<Item = Entity> + '_ {
+        self.map.keys().copied().map(Entity)
+    }
+}
+
+/// Trait abstraction over component storage backends (SparseSet / HashMapSet).
+pub trait ComponentStore<T: Send + Sync + Sized + Copy + Clone> {
+    fn set(&mut self, data: T, entity: Entity);
+    fn add_entity(&mut self, data: T, entity: Entity);
+    fn remove_entity(&mut self, entity: Entity) -> Option<T>;
+    fn get(&self, entity: Entity) -> Option<&T>;
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut T>;
+    fn has(&self, entity: Entity) -> bool;
+    fn len(&self) -> usize;
+    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_>;
+    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_>;
+}
+
+impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for SparseSet<T> {
+    fn set(&mut self, data: T, entity: Entity) {
+        Self::set(self, data, entity);
+    }
+    fn add_entity(&mut self, data: T, entity: Entity) {
+        Self::add_entity(self, data, entity);
+    }
+    fn remove_entity(&mut self, entity: Entity) -> Option<T> {
+        Self::remove_entity(self, entity)
+    }
+    fn get(&self, entity: Entity) -> Option<&T> {
+        Self::get(self, entity)
+    }
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+        Self::get_mut(self, entity)
+    }
+    fn has(&self, entity: Entity) -> bool {
+        Self::has(self, entity)
+    }
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
+        Box::new(SparseSet::iter(self))
+    }
+    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
+        Box::new(SparseSet::iter_mut(self))
+    }
+}
+
+impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for HashMapSet<T> {
+    fn set(&mut self, data: T, entity: Entity) {
+        HashMapSet::set(self, data, entity);
+    }
+    fn add_entity(&mut self, data: T, entity: Entity) {
+        HashMapSet::add_entity(self, data, entity);
+    }
+    fn remove_entity(&mut self, entity: Entity) -> Option<T> {
+        HashMapSet::remove_entity(self, entity)
+    }
+    fn get(&self, entity: Entity) -> Option<&T> {
+        HashMapSet::get(self, entity)
+    }
+    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+        HashMapSet::get_mut(self, entity)
+    }
+    fn has(&self, entity: Entity) -> bool {
+        HashMapSet::has(self, entity)
+    }
+    fn len(&self) -> usize {
+        HashMapSet::len(self)
+    }
+    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
+        Box::new(HashMapSet::iter(self))
+    }
+    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
+        Box::new(HashMapSet::iter_mut(self))
+    }
+}
 
 /// Attempts to get a reference to a component. If not found, executes the fallback block.
 /// Usage: and!(components, entity, comp, { continue; });
@@ -305,7 +435,6 @@ mod tests {
         println!("iteration: {:?}", i.elapsed());
     }
 
-
     #[test]
     fn test_add_remove() {
         let mut component = SparseSet::<usize>::new(3);
@@ -346,57 +475,103 @@ mod tests {
     #[test]
     fn test_added_removed_tracking() {
         let mut component = SparseSet::<u32>::new(5);
-        
+
         // Initially, both vectors should be empty
         assert!(component.added.is_empty());
         assert!(component.removed.is_empty());
-        
+
         // Add some entities
         component.add_entity(10, Entity(0));
         component.add_entity(20, Entity(1));
         component.add_entity(30, Entity(2));
-        
+
         // Check that added entities are tracked
         assert_eq!(component.added.len(), 3);
         assert!(component.added.contains(&Entity(0)));
         assert!(component.added.contains(&Entity(1)));
         assert!(component.added.contains(&Entity(2)));
         assert!(component.removed.is_empty());
-        
+
         // Remove an entity
         let removed_data = component.remove_entity(Entity(1));
         assert_eq!(removed_data, Some(20));
-        
+
         // Check that removed entity is tracked
         assert_eq!(component.removed.len(), 1);
         assert!(component.removed.contains(&Entity(1)));
         assert_eq!(component.added.len(), 3); // Added vector should remain unchanged
-        
+
         // Remove another entity
         component.remove_entity(Entity(2));
-        
+
         // Check that both removed entities are tracked
         assert_eq!(component.removed.len(), 2);
         assert!(component.removed.contains(&Entity(1)));
         assert!(component.removed.contains(&Entity(2)));
-        
+
         // Try to remove non-existent entity
         let not_removed = component.remove_entity(Entity(3));
         assert_eq!(not_removed, None);
-        
+
         // Removed vector should not change for non-existent entity
         assert_eq!(component.removed.len(), 2);
-        
+
         // Add an entity that was previously removed
         component.add_entity(40, Entity(1));
-        
+
         // Check that it's added to the added vector again
         assert_eq!(component.added.len(), 4);
         assert!(component.added.contains(&Entity(1))); // Should appear twice in added
-        
-        
+
         // Count occurrences of Entity(1) in added vector
         let entity1_count = component.added.iter().filter(|&&e| e == Entity(1)).count();
         assert_eq!(entity1_count, 2);
+    }
+
+    #[test]
+    fn hashmap_basic() {
+        let mut component = super::HashMapSet::<u32>::new();
+        component.add_entity(10, Entity(1));
+        assert_eq!(component.get(Entity(1)), Some(&10));
+        component.set(15, Entity(1));
+        assert_eq!(component.get(Entity(1)), Some(&15));
+        let removed = component.remove_entity(Entity(1));
+        assert_eq!(removed, Some(15));
+        assert!(!component.has(Entity(1)));
+    }
+
+    #[test]
+    fn hashmap_iter_mut() {
+        let mut component = super::HashMapSet::<u32>::new();
+        for i in 0..5 {
+            component.add_entity(i as u32, Entity(i));
+        }
+        for (_e, v) in component.iter_mut() {
+            *v += 1;
+        }
+        for (_e, v) in component.iter() {
+            assert!(*v >= 1);
+        }
+    }
+
+    #[test]
+    fn trait_object_usage() {
+        // Use trait object abstraction to manipulate either backend.
+        let mut sparse: super::SparseSet<u32> = super::SparseSet::new(10);
+        let mut map: super::HashMapSet<u32> = super::HashMapSet::new();
+        let s_store: &mut dyn super::ComponentStore<u32> = &mut sparse;
+        let m_store: &mut dyn super::ComponentStore<u32> = &mut map;
+        s_store.add_entity(5, Entity(0));
+        m_store.add_entity(6, Entity(1));
+        assert_eq!(s_store.get(Entity(0)), Some(&5));
+        assert_eq!(m_store.get(Entity(1)), Some(&6));
+        for (_e, v) in s_store.iter_mut() {
+            *v += 1;
+        }
+        for (_e, v) in m_store.iter_mut() {
+            *v += 1;
+        }
+        assert_eq!(s_store.get(Entity(0)), Some(&6));
+        assert_eq!(m_store.get(Entity(1)), Some(&7));
     }
 }

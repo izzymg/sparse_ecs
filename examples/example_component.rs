@@ -1,4 +1,4 @@
-use sparse_ecs::{ecs_and, world::World, Component};
+use sparse_ecs::{Component, ecs_and, world::World};
 
 #[derive(Component, Copy, Clone)]
 struct Position {
@@ -9,7 +9,11 @@ struct Position {
 
 impl Default for Position {
     fn default() -> Self {
-        Position { x: 0.0, y: 0.0, z: 0.0 }
+        Position {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
     }
 }
 
@@ -22,7 +26,11 @@ struct Velocity {
 
 impl Default for Velocity {
     fn default() -> Self {
-        Velocity { x: 1.0, y: 5.0, z: 0.0 }
+        Velocity {
+            x: 1.0,
+            y: 5.0,
+            z: 0.0,
+        }
     }
 }
 
@@ -30,7 +38,9 @@ fn move_system(world: &mut World) {
     let (positions, velocities) = world.get_two_mut::<Position, Velocity>();
     if let (Some(positions), Some(velocities)) = (positions, velocities) {
         for (entity, pos) in positions.iter_mut() {
-            ecs_and!(velocities, entity, velocity, { continue; });
+            ecs_and!(velocities, entity, velocity, {
+                continue;
+            });
             pos.x += velocity.x;
             pos.y += velocity.y;
             pos.z += velocity.z;
@@ -43,9 +53,15 @@ fn main() {
     world.add::<Position>();
     world.add::<Velocity>();
     let entity = world.spawn();
-    world.get_mut::<Position>().unwrap().add_entity(Position::default(), entity);
-    world.get_mut::<Velocity>().unwrap().add_entity(Velocity::default(), entity);
-    
+    world
+        .get_mut::<Position>()
+        .unwrap()
+        .add_entity(Position::default(), entity);
+    world
+        .get_mut::<Velocity>()
+        .unwrap()
+        .add_entity(Velocity::default(), entity);
+
     move_system(&mut world);
 
     // Print the position of the entity after moving
