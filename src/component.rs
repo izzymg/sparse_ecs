@@ -274,84 +274,6 @@ where
     }
 }
 
-/// Trait abstraction over component storage backends (SparseSet / HashMapSet).
-pub trait ComponentStore<T: Send + Sync + Sized + Copy + Clone> {
-    fn set(&mut self, data: T, entity: Entity);
-    fn add_entity(&mut self, data: T, entity: Entity);
-    fn remove_entity(&mut self, entity: Entity) -> Option<T>;
-    fn get(&self, entity: Entity) -> Option<&T>;
-    fn get_mut(&mut self, entity: Entity) -> Option<&mut T>;
-    fn has(&self, entity: Entity) -> bool;
-    fn len(&self) -> usize;
-    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_>;
-    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_>;
-}
-
-impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for SparseSet<T> {
-    fn set(&mut self, data: T, entity: Entity) {
-        Self::set(self, data, entity);
-    }
-    fn add_entity(&mut self, data: T, entity: Entity) {
-        Self::add_entity(self, data, entity);
-    }
-    fn remove_entity(&mut self, entity: Entity) -> Option<T> {
-        Self::remove_entity(self, entity)
-    }
-    fn get(&self, entity: Entity) -> Option<&T> {
-        Self::get(self, entity)
-    }
-    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-        Self::get_mut(self, entity)
-    }
-    fn has(&self, entity: Entity) -> bool {
-        Self::has(self, entity)
-    }
-    fn len(&self) -> usize {
-        Self::len(self)
-    }
-    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
-    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
-        Box::new(SparseSet::iter(self))
-    }
-    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
-    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
-        Box::new(SparseSet::iter_mut(self))
-    }
-}
-
-impl<T: Send + Sync + Sized + Copy + Clone> ComponentStore<T> for HashMapSet<T> {
-    fn set(&mut self, data: T, entity: Entity) {
-        HashMapSet::set(self, data, entity);
-    }
-    fn add_entity(&mut self, data: T, entity: Entity) {
-        HashMapSet::add_entity(self, data, entity);
-    }
-    fn remove_entity(&mut self, entity: Entity) -> Option<T> {
-        HashMapSet::remove_entity(self, entity)
-    }
-    fn get(&self, entity: Entity) -> Option<&T> {
-        HashMapSet::get(self, entity)
-    }
-    fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-        HashMapSet::get_mut(self, entity)
-    }
-    fn has(&self, entity: Entity) -> bool {
-        HashMapSet::has(self, entity)
-    }
-    fn len(&self) -> usize {
-        HashMapSet::len(self)
-    }
-
-    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
-    fn iter(&self) -> Box<dyn Iterator<Item = (Entity, &T)> + '_> {
-        Box::new(HashMapSet::iter(self))
-    }
-    /// Iterates this component's storage. Slower than fetching the concrete component type and iterating it directly.
-    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = (Entity, &mut T)> + '_> {
-        Box::new(HashMapSet::iter_mut(self))
-    }
-}
-
 /// Attempts to get a reference to a component. If not found, executes the fallback block.
 /// Usage: and!(components, entity, comp, { continue; });
 #[macro_export]
@@ -739,8 +661,8 @@ mod tests {
         // Use trait object abstraction to manipulate either backend.
         let mut sparse: super::SparseSet<u32> = super::SparseSet::new(10);
         let mut map: super::HashMapSet<u32> = super::HashMapSet::new();
-        let s_store: &mut dyn super::ComponentStore<u32> = &mut sparse;
-        let m_store: &mut dyn super::ComponentStore<u32> = &mut map;
+        let s_store = &mut sparse;
+        let m_store = &mut map;
         s_store.add_entity(5, Entity(0));
         m_store.add_entity(6, Entity(1));
         assert_eq!(s_store.get(Entity(0)), Some(&5));

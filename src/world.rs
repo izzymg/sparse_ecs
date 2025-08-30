@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    component::{self, ComponentStore, Entity, HashMapSet, SparseSet},
+    component::{self, Entity, HashMapSet, SparseSet},
     tags,
 };
 
@@ -144,32 +144,14 @@ impl World {
         comp.unwrap().downcast_mut::<HashMapSet<T>>()
     }
 
-    /// Returns a dynamic trait object to the component storage, regardless of backend.
-    pub fn get<T: Component>(&self) -> Option<&dyn ComponentStore<T>> {
-        let any = self.map.get(&TypeId::of::<T>())?;
-        // Try sparse first then hashmap
-        if let Some(s) = any.downcast_ref::<SparseSet<T>>() {
-            return Some(s as &dyn ComponentStore<T>);
-        }
-        if let Some(h) = any.downcast_ref::<HashMapSet<T>>() {
-            return Some(h as &dyn ComponentStore<T>);
-        }
-        None
+    /// Returns a SpaseSet storage (default).
+    pub fn get<T: Component>(&self) -> Option<&SparseSet<T>> {
+        self.get_sparse()
     }
 
-    /// Mutable variant of `get_store`.
-    pub fn get_mut<T: Component>(&mut self) -> Option<&mut dyn ComponentStore<T>> {
-        let any = self.map.get_mut(&TypeId::of::<T>())?;
-        // We can attempt downcast in sequence without re-borrowing by using raw pointer casts.
-        if any.is::<SparseSet<T>>() {
-            let ptr = any.downcast_mut::<SparseSet<T>>().unwrap();
-            return Some(ptr as &mut dyn ComponentStore<T>);
-        }
-        if any.is::<HashMapSet<T>>() {
-            let ptr = any.downcast_mut::<HashMapSet<T>>().unwrap();
-            return Some(ptr as &mut dyn ComponentStore<T>);
-        }
-        None
+    /// Mutable variant of `get`.
+    pub fn get_mut<T: Component>(&mut self) -> Option<&mut SparseSet<T>> {
+        self.get_sparse_mut()
     }
 }
 
@@ -210,14 +192,14 @@ pub trait FetchMut<'a> {
 }
 
 impl<'a, A: Component> FetchMut<'a> for (A,) {
-    type Output = &'a mut dyn ComponentStore<A>;
+    type Output = &'a mut SparseSet<A>;
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         world.get_mut::<A>()
     }
 }
 
 impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
-    type Output = (&'a mut dyn ComponentStore<A>, &'a mut dyn ComponentStore<B>);
+    type Output = (&'a mut SparseSet<A>, &'a mut SparseSet<B>);
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b) = world.get_two_mut::<A, B>();
         Some((a?, b?))
@@ -226,9 +208,9 @@ impl<'a, A: Component, B: Component> FetchMut<'a> for (A, B) {
 
 impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
     type Output = (
-        &'a mut dyn ComponentStore<A>,
-        &'a mut dyn ComponentStore<B>,
-        &'a mut dyn ComponentStore<C>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c) = world.get_three_mut::<A, B, C>();
@@ -238,10 +220,10 @@ impl<'a, A: Component, B: Component, C: Component> FetchMut<'a> for (A, B, C) {
 
 impl<'a, A: Component, B: Component, C: Component, D: Component> FetchMut<'a> for (A, B, C, D) {
     type Output = (
-        &'a mut dyn ComponentStore<A>,
-        &'a mut dyn ComponentStore<B>,
-        &'a mut dyn ComponentStore<C>,
-        &'a mut dyn ComponentStore<D>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d) = world.get_four_mut::<A, B, C, D>();
@@ -253,11 +235,11 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component> F
     for (A, B, C, D, E)
 {
     type Output = (
-        &'a mut dyn ComponentStore<A>,
-        &'a mut dyn ComponentStore<B>,
-        &'a mut dyn ComponentStore<C>,
-        &'a mut dyn ComponentStore<D>,
-        &'a mut dyn ComponentStore<E>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
+        &'a mut SparseSet<E>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d, e) = world.get_five_mut::<A, B, C, D, E>();
@@ -269,12 +251,12 @@ impl<'a, A: Component, B: Component, C: Component, D: Component, E: Component, F
     FetchMut<'a> for (A, B, C, D, E, F)
 {
     type Output = (
-        &'a mut dyn ComponentStore<A>,
-        &'a mut dyn ComponentStore<B>,
-        &'a mut dyn ComponentStore<C>,
-        &'a mut dyn ComponentStore<D>,
-        &'a mut dyn ComponentStore<E>,
-        &'a mut dyn ComponentStore<F>,
+        &'a mut SparseSet<A>,
+        &'a mut SparseSet<B>,
+        &'a mut SparseSet<C>,
+        &'a mut SparseSet<D>,
+        &'a mut SparseSet<E>,
+        &'a mut SparseSet<F>,
     );
     fn fetch(world: &'a mut World) -> Option<Self::Output> {
         let (a, b, c, d, e, f) = world.get_six_mut::<A, B, C, D, E, F>();
