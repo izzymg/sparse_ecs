@@ -9,9 +9,14 @@ use crate::{
 };
 
 /// Storage for components and tags, as well as basic entity management.
+struct AnyStorageEntry {
+    inner: Box<dyn Any>,
+    remove_fn: fn(&mut dyn Any, Entity),
+}
+
 pub struct World {
     pub tags: tags::EntityTags,
-    map: HashMap<TypeId, Box<dyn Any>>,
+    map: HashMap<TypeId, AnyStorageEntry>,
     entities: HashSet<usize>,
     dead_entities: HashSet<usize>,
     next_entity_id: usize,
@@ -61,7 +66,15 @@ impl World {
     /// The ID may be reused in the future.
     pub fn despawn(&mut self, entity: component::Entity) {
         if self.entities.remove(&entity.0) {
+            // Mark as dead for potential ID reuse
             self.dead_entities.insert(entity.0);
+
+            // Remove entity from all component storages
+            for entry in self.map.values_mut() {
+                (entry.remove_fn)(entry.inner.as_mut(), entity);
+            }
+
+            // Remove all tags associated with the entity
             self.tags.remove_all_tags(&entity);
         } else {
             panic!("attempted to despawn non-existent entity ID: {:?}", entity);
@@ -77,7 +90,16 @@ impl World {
         if self.map.contains_key(&key) {
             return false;
         }
-        self.map.insert(key, Box::new(set));
+        self.map.insert(
+            key,
+            AnyStorageEntry {
+                inner: Box::new(set),
+                remove_fn: |any: &mut dyn Any, e: Entity| {
+                    let storage = any.downcast_mut::<Storage<T>>().expect("type mismatch");
+                    let _ = storage.remove_entity(e);
+                },
+            },
+        );
         debug_assert!(self.map.contains_key(&key), "Component not added to World2");
         true
     }
@@ -89,14 +111,20 @@ impl World {
         if self.map.contains_key(&key) {
             return false;
         }
-        match kind {
-            ComponentStorageKind::Sparse => {
-                self.map.insert(key, Box::new(Storage::<T>::new_sparse(self.size)));
-            }
-            ComponentStorageKind::HashMap => {
-                self.map.insert(key, Box::new(Storage::<T>::new_hashmap()));
-            }
-        }
+        let storage: Storage<T> = match kind {
+            ComponentStorageKind::Sparse => Storage::<T>::new_sparse(self.size),
+            ComponentStorageKind::HashMap => Storage::<T>::new_hashmap(),
+        };
+        self.map.insert(
+            key,
+            AnyStorageEntry {
+                inner: Box::new(storage),
+                remove_fn: |any: &mut dyn Any, e: Entity| {
+                    let storage = any.downcast_mut::<Storage<T>>().expect("type mismatch");
+                    let _ = storage.remove_entity(e);
+                },
+            },
+        );
         true
     }
 
@@ -115,17 +143,17 @@ impl World {
     /// Retrieves storage for the component type from the world, if present.
     pub fn get<T: Component>(&self) -> Option<&Storage<T>> {
         let key = TypeId::of::<T>();
-        let comp = self.map.get(&key);
-        comp?.downcast_ref::<Storage<T>>()
+        let entry = self.map.get(&key)?;
+        entry.inner.downcast_ref::<Storage<T>>()
     }
 
     /// Mutable variant of `get`.
     pub fn get_mut<T: Component>(&mut self) -> Option<&mut Storage<T>> {
-        let comp = self.map.get_mut(&TypeId::of::<T>());
-        comp.as_ref()?;
-        comp.unwrap().downcast_mut::<Storage<T>>()
+        let entry = self.map.get_mut(&TypeId::of::<T>())?;
+        entry.inner.downcast_mut::<Storage<T>>()
     }
 }
+
 
 pub trait Component: Sync + Send + 'static + Sized + Copy + Clone {}
 
@@ -142,7 +170,7 @@ macro_rules! impl_get_mut {
             (
                 $(
                     it.next().unwrap()
-                        .and_then(|s| s.downcast_mut::<Storage<$ty>>()),
+                        .and_then(|e| e.inner.downcast_mut::<Storage<$ty>>()),
                 )+
             )
         }
@@ -384,5 +412,33 @@ mod test {
             second_id, third_id,
             "Third entity should not have same ID as active entity"
         );
+    }
+
+    #[test]
+    fn despawn_removes_components() {
+        #[derive(Copy, Clone)]
+        struct Position {
+            x: i32,
+            y: i32,
+        }
+        impl super::Component for Position {}
+
+        let mut world = super::World::new(10);
+        world.add::<Position>();
+
+        let e = world.spawn();
+
+        {
+            // Add component for the entity
+            let store = world.get_mut::<Position>().expect("missing storage");
+            store.add_entity(Position { x: 1, y: 2 }, e);
+            assert!(store.has(e));
+        }
+
+        // Despawn should remove the entity from all component storages
+        world.despawn(e);
+
+        let store = world.get::<Position>().expect("missing storage");
+        assert!(!store.has(e));
     }
 }
