@@ -17,7 +17,6 @@ struct AnyStorageEntry {
 pub struct World {
     pub tags: tags::EntityTags,
     map: HashMap<TypeId, AnyStorageEntry>,
-    entities: HashSet<usize>,
     dead_entities: HashSet<usize>,
     next_entity_id: usize,
 
@@ -37,7 +36,6 @@ impl World {
     pub fn new(size: usize) -> Self {
         World {
             map: HashMap::new(),
-            entities: HashSet::new(),
             dead_entities: HashSet::new(),
             next_entity_id: 0,
             tags: tags::EntityTags::new(),
@@ -46,39 +44,28 @@ impl World {
     }
 
     /// Spawns a new entity.
-    /// If there are dead entities, it reuses one of their IDs.
     pub fn spawn(&mut self) -> component::Entity {
-        if let Some(dead_id) = self.dead_entities.iter().next().cloned() {
-            self.dead_entities.remove(&dead_id);
-            let entity = component::Entity(dead_id);
-            self.entities.insert(dead_id);
-            entity
-        } else {
-            self.entities.insert(self.next_entity_id);
-            let entity = component::Entity(self.next_entity_id);
-            self.next_entity_id += 1;
-            entity
-        }
+        let entity = component::Entity(self.next_entity_id);
+        self.next_entity_id += 1;
+        entity
     }
 
     /// Removes an entity from all component storage and tags.
-    /// This will panic if the entity does not exist.
-    /// The ID may be reused in the future.
-    pub fn despawn(&mut self, entity: component::Entity) {
-        if self.entities.remove(&entity.0) {
-            // Mark as dead for potential ID reuse
-            self.dead_entities.insert(entity.0);
-
-            // Remove entity from all component storages
-            for entry in self.map.values_mut() {
-                (entry.remove_fn)(entry.inner.as_mut(), entity);
-            }
-
-            // Remove all tags associated with the entity
-            self.tags.remove_all_tags(&entity);
-        } else {
-            panic!("attempted to despawn non-existent entity ID: {:?}", entity);
+    /// Returns false if it was already marked dead.
+    pub fn despawn(&mut self, entity: component::Entity) -> bool {
+        // Mark as dead for potential ID reuse
+        if !self.dead_entities.insert(entity.0) {
+            return false;
         }
+
+        // Remove entity from all component storages
+        for entry in self.map.values_mut() {
+            (entry.remove_fn)(entry.inner.as_mut(), entity);
+        }
+
+        // Remove all tags associated with the entity
+        self.tags.remove_all_tags(&entity);
+        true
     }
 
     /// Adds a component type to the world.
