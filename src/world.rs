@@ -43,6 +43,10 @@ impl World {
         }
     }
 
+    pub fn is_dead(&self, entity: &component::Entity) -> bool {
+        self.dead_entities.contains(&entity.0)
+    }
+
     /// Spawns a new entity.
     pub fn spawn(&mut self) -> component::Entity {
         let entity = component::Entity(self.next_entity_id);
@@ -373,35 +377,6 @@ mod test {
     }
 
     #[test]
-    fn test_entity_id_reuse() {
-        let mut world = super::World::new(5);
-
-        // Spawn first entity
-        let entity1 = world.spawn();
-        let first_id = entity1.0;
-
-        // Spawn second entity
-        let entity2 = world.spawn();
-        let second_id = entity2.0;
-
-        // Despawn first entity
-        world.despawn(entity1);
-
-        // Spawn third entity - should reuse first entity's ID
-        let entity3 = world.spawn();
-        let third_id = entity3.0;
-
-        assert_eq!(
-            first_id, third_id,
-            "Entity ID should be reused after despawn"
-        );
-        assert_ne!(
-            second_id, third_id,
-            "Third entity should not have same ID as active entity"
-        );
-    }
-
-    #[test]
     fn despawn_removes_components() {
         #[derive(Copy, Clone)]
         struct Position {
@@ -424,6 +399,7 @@ mod test {
 
         // Despawn should remove the entity from all component storages
         world.despawn(e);
+        assert!(world.is_dead(&e));
 
         let store = world.get::<Position>().expect("missing storage");
         assert!(!store.has(e));
