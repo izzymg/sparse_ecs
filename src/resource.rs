@@ -66,6 +66,12 @@ impl Debug for Resources {
 }
 
 #[allow(dead_code)]
+impl Default for Resources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Resources {
     /// Creates a new, empty resource container.
     pub fn new() -> Self {

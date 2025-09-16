@@ -120,10 +120,7 @@ where
             SparseIndex::Map(index) => index.remove(&entity.0),
         };
 
-        let idx = match idx_opt {
-            Some(i) => i,
-            None => return None,
-        };
+        let idx = idx_opt?;
 
         let last = self.dense.len() - 1;
         self.entities.swap_remove(idx);
@@ -612,8 +609,7 @@ mod tests {
         let map_read = t0.elapsed();
 
         println!(
-            "N={N} sparse_mut={:?} map_mut={:?} sparse_read={:?} map_read={:?}",
-            sparse_mut, map_mut, sparse_read, map_read
+            "N={N} sparse_mut={sparse_mut:?} map_mut={map_mut:?} sparse_read={sparse_read:?} map_read={map_read:?}"
         );
 
         assert_eq!(sparse.len(), map.len());

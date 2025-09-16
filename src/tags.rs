@@ -41,6 +41,12 @@ pub struct EntityTags {
     tags: HashMap<&'static str, TagList>,
 }
 
+impl Default for EntityTags {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EntityTags {
     pub fn new() -> Self {
         Self {
@@ -112,6 +118,6 @@ impl EntityTags {
 
     /// Returns true if the given entity has the given tag.
     pub fn has_tag(&self, tag: &'static str, entity: &Entity) -> bool {
-        self.tags.get(tag).map_or(false, |l| l.contains(entity))
+        self.tags.get(tag).is_some_and(|l| l.contains(entity))
     }
 }
