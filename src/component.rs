@@ -4,9 +4,13 @@ use std::{collections::HashMap, str::FromStr};
 
 use std::fmt::Debug;
 
+#[cfg(feature = "serde")]
+use serde::Serialize;
+
 /// Represents a unique entity in the ECS.
 /// Wraps a usize ID.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Entity(pub usize);
 
 impl Entity {
