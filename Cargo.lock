@@ -138,7 +138,7 @@ dependencies = [
 
 [[package]]
 name = "sparse_ecs"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "parking_lot",
  "serde",

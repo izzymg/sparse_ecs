@@ -9,11 +9,13 @@ use crate::{
 };
 
 /// Storage for components and tags, as well as basic entity management.
+#[derive(Debug)]
 struct AnyStorageEntry {
     inner: Box<dyn Any>,
     remove_fn: fn(&mut dyn Any, Entity),
 }
 
+#[derive(Debug)]
 pub struct World {
     pub tags: tags::EntityTags,
     map: HashMap<TypeId, AnyStorageEntry>,
